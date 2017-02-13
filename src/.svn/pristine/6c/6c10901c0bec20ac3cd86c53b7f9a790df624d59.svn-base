@@ -1,0 +1,25 @@
+package stats.handlers;
+
+import caching.base.AbstractCachingPolicy;
+
+/**
+ * @author xvas
+ * @param <USER_TYPE>
+ * @param <CELL_TYPE>
+ */
+public abstract class AbstractGainStat<USER_TYPE, CELL_TYPE> extends BaseHandler implements stats.handlers.ICompute {
+
+    protected final AbstractCachingPolicy _cachingPolicy;
+
+    public AbstractGainStat(AbstractCachingPolicy cachingMethod) {
+        super();
+        _cachingPolicy = cachingMethod;
+    }
+
+    public abstract double compute2(USER_TYPE user) throws stats.StatisticException;
+
+    @Override
+    public String title() {
+        return getClass().getName() + "(" + _cachingPolicy.toString().substring(8) + ")";
+    }
+}

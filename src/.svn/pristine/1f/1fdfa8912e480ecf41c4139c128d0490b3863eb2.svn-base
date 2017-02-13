@@ -1,0 +1,49 @@
+package caching.rplc.lru;
+
+import caching.Utils;
+import caching.base.AbstractEPC;
+import caching.base.AbstractCachingPolicy;
+import caching.interfaces.rplc.ILRURplc;
+import java.util.Set;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.ITimeBuffer;
+import sim.space.cell.smallcell.PricedTimeBuffer;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+
+/**
+ * Functionality must be checked after severe changes in code
+ *
+ * @author xvas
+ */
+@Deprecated
+public final class EPC extends AbstractEPC implements ILRURplc {
+
+    private static EPC singleton = new EPC();
+
+    /**
+     * @return the singleton instance of this class according to its placement
+     * in the hierarchy of AbstractMethod class descendants.
+     */
+    public static AbstractCachingPolicy instance() {
+        return singleton;
+    }
+
+    public static Class bufferType() {
+        return PricedTimeBuffer.class;
+    }
+
+    private EPC() {
+    }
+
+    @Override
+    public Set<Chunk> cacheDecision(CachingUser mu, SmallCell sc) throws Throwable {
+        return Utils.pricedLRUCacheDecision(this, mu, sc);
+    }
+
+    @Override
+    public Set<Chunk> optForEviction(ITimeBuffer evictBuffer, Chunk item) throws Throwable {
+        return Utils.optForEvictionLRUAccess(evictBuffer, item);
+    }
+
+}

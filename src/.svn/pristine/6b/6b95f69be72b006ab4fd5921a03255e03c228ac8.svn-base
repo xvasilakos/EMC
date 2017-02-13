@@ -1,0 +1,47 @@
+package sim.time;
+
+/**
+ * Clock that simply ticks to keep the simulation time updated and does not end
+ * a simulation.
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class SimpleClock extends AbstractClock {
+
+    protected int gcPeriod;
+
+    public SimpleClock(sim.Simulation sim) {
+        super(sim);
+        if (sim == sim.NONE) {
+            gcPeriod = -1;
+            return;
+        }
+
+        try {
+            gcPeriod = getSim().getScenario().intProperty(app.properties.Simulation.Clock.GC_PERIOD);
+            //</editor-fold>
+        } catch (RuntimeException ex) {
+            // ignore
+            gcPeriod = Integer.MAX_VALUE;
+        }
+    }
+
+    @Override
+    protected void checkEnded(int time) throws NormalSimulationEndException {
+        tryCallGC(time);
+    }
+
+    protected void tryCallGC(int time) {
+        double freePercent = Runtime.getRuntime().freeMemory()
+                / Runtime.getRuntime().maxMemory();
+        if (time % gcPeriod == 0 || freePercent < .2) {
+            System.gc();
+        }
+    }
+
+    @Override
+    public String simTimeStr() {
+        return "[" + simTime() + "]";
+    }
+
+}

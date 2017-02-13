@@ -1,0 +1,122 @@
+package tmp;
+
+import java.util.Stack;
+
+class Algorithms {
+
+   private static class QSortStackElement {
+
+      int arr[];
+      int l, r;
+
+      QSortStackElement(int arr[], int l, int r) {
+         this.arr = arr;
+         this.l = l;
+         this.r = r;
+      }
+   }
+
+   private Algorithms() {
+   }
+
+   public static void qSortIterative(int[] data, int l, int r) {
+      Stack<Integer> S = new Stack();
+      S.push(l);
+      S.push(r);
+      while (!S.isEmpty()) {
+         r = S.pop();
+         l = S.pop();
+         if (r <= l) {
+            continue; // end of respective "recursive" calls
+         }
+         int i = partition(data, l, r);
+         // left part of data "recursion"
+         if (i - l > r - i) {
+            S.push(l);
+            S.push(i - 1);
+         }
+
+         // right part of data  "recursion"
+         S.push(i + 1);
+         S.push(r);
+         if (r - i >= i - l) {
+            S.push(l);
+            S.push(i - 1);
+         }
+      }
+   }
+
+   public static void qSort(int[] data, int l, int r) {
+      if (l >= r) {
+         return;
+      }
+
+      int pivotIdx = partition(data, l, r);
+      qSort(data, l, pivotIdx - 1);
+      qSort(data, pivotIdx + 1, r);
+   }
+
+   //WRONG!
+   public static int quickSelect(int[] data, int l, int r, int k) {
+      if (r <= l) {
+         return data[r];
+      }
+
+      int pivotIdx = partition(data, l, r);
+      if (k == pivotIdx) {
+         return data[k];
+      }
+      if (k < pivotIdx) {
+         return quickSelect(data, l, pivotIdx - 1, k);
+      } else {
+         return quickSelect(data, pivotIdx + 1, r, k);
+      }
+   }
+
+   public static int partition(int data[], int l, int r) {
+
+      int p = (int) (Math.random() * (r - l) + l);// random pivot selection
+      int pValue = data[p];
+
+      swap(data, p, r);
+
+      int lIdx = l, rIdx = r - 1;
+      while (true) {
+         while (data[lIdx] < pValue){
+         if (lIdx++ >= rIdx ){
+         
+         }}
+         while (data[rIdx] > pValue && lIdx + 1 < rIdx--);
+         if (lIdx >= rIdx) { // found pivot's position
+            swap(data, lIdx, r);
+            return lIdx;
+         }
+         swap(data, lIdx, rIdx);  //else  only swap..
+      }
+   }
+
+   private static void swap(int[] data, int lIdx, int rIdx) {
+      int tmp = data[lIdx];
+      data[lIdx] = data[rIdx];
+      data[rIdx] = tmp;
+   }
+
+   public static void main(String[] args) {
+      int[] test = {9, 1, 5, 2, 7, 3, 10, 6, 8, 4};
+      for (int i = 0; i < test.length; i++) {
+         System.out.print(test[i] + ", ");
+      }
+
+      int k = 9; //(k+1)-th  element
+      System.out.println("Quick Select " + (k+1) + "-th element = " + quickSelect(test, 0, test.length - 1, k));
+
+      //<editor-fold defaultstate="collapsed" desc="QuickSort">
+      //      System.out.println("\n*****QSorting*****");
+      //      qSort(test, 0, test.length - 1);
+      //      qSortIterative(test, 0, test.length - 1);
+      //      for (int i = 0; i < test.length; i++) {
+      //         System.out.print(test[i] + ", ");
+      //      }
+      //</editor-fold>
+   }
+}

@@ -1,0 +1,38 @@
+package stats.gainstats.gains;
+
+import caching.base.AbstractCachingPolicy;
+import java.util.Iterator;
+import java.util.List;
+import sim.content.request.DocumentRequest;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+import stats.StatisticException;
+import stats.handlers.AbstractGainStat;
+
+/**
+ * Chunks consumed from macro cell when connected to a small cell as well
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class MCNumConn2SC extends AbstractGainStat<CachingUser, SmallCell> {
+
+    public MCNumConn2SC(AbstractCachingPolicy cachingMethod) {
+        super(cachingMethod);
+    }
+
+    @Override
+    public final double compute2(CachingUser user) throws StatisticException {
+        double sum = 0;
+
+        Iterator<DocumentRequest> iterator = user.getRequests().iterator();
+        while (iterator.hasNext()) {
+            DocumentRequest nxtRequest = iterator.next();
+            List<Chunk> consumedChunksFromMC = nxtRequest.getChunksConsumedHistoryFromMC(_cachingPolicy);
+            sum += consumedChunksFromMC.size();
+
+        }
+
+        return sum;
+    }
+}

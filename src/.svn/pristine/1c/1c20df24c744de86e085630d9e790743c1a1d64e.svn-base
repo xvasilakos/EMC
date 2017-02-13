@@ -1,0 +1,19 @@
+package sim.time;
+
+/**
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class NormalSimulationEndException extends InterruptedException {
+
+   
+
+   public NormalSimulationEndException(String msg) {
+      super(msg);
+   }
+
+   public NormalSimulationEndException() {
+      super();
+   }
+
+}

@@ -1,0 +1,47 @@
+package sim.content.request;
+
+import caching.base.AbstractCachingPolicy;
+import java.util.List;
+import java.util.Map;
+import sim.content.Chunk;
+import sim.space.users.User;
+
+/**
+ *
+ * @author xvas
+ */
+public interface IRequest {
+
+    List<Chunk> predictChunksToCache(
+            double expectedHandoffDuration, double handDurError, 
+            double expectedResidenceDuration, double resiDurError, 
+            int mcRateSliceBytes, int bhRateSliceBytes, 
+            int scRateSliceBytes);
+
+    void consumeChunks(double mcRateSlice, Map<AbstractCachingPolicy, List<Chunk>> fillInWithDownloadedFromMC, double scRateSlice, Map<AbstractCachingPolicy, List<Chunk>> fillInWithCacheHits, double minSCorBHRateSlice, Map<AbstractCachingPolicy, List<Chunk>> fillInWithDownloadedFromBH, Map<AbstractCachingPolicy, List<Chunk>> fillInWithMissedPerPolicy);
+
+    @Override
+    boolean equals(Object obj);
+
+    List<Chunk> getChunksCacheHitsHistory(AbstractCachingPolicy policy);
+
+    Map<AbstractCachingPolicy, List<Chunk>> getChunksConsumedHistoryFromBH();
+
+    List<Chunk> getChunksConsumedHistoryFromBH(AbstractCachingPolicy policy);
+
+    Map<AbstractCachingPolicy, List<Chunk>> getChunksConsumedHistoryFromMC();
+
+    List<Chunk> getChunksConsumedHistoryFromMC(AbstractCachingPolicy policy);
+
+    List<Chunk> getChunksConsumedHistoryFromMCWhenDisconnected(AbstractCachingPolicy policy);
+
+    int getIssuedAtSimTime();
+
+    User getRequesterUser();
+
+    @Override
+    int hashCode();
+
+    long requesterUserID();
+
+}

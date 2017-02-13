@@ -1,0 +1,14 @@
+package stats.handlers;
+
+import sim.Simulation;
+import sim.space.cell.AbstractCell;
+import sim.space.users.mobile.MobileUser;
+
+/**
+ * Requires the Simulation , the MobileUser mu and the AbstractCell to computePercent statistics.
+ * @author xvas
+ */
+public interface IComputePercent extends stats.handlers.ICompute{
+   
+   public abstract double computePercent(Simulation sim, MobileUser mu, AbstractCell cell) throws stats.StatisticException;
+}

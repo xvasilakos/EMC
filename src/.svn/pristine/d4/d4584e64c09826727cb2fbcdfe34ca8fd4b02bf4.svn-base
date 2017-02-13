@@ -1,0 +1,392 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package sim.space.users.mobile;
+
+import app.properties.Space;
+import exceptions.InconsistencyException;
+import exceptions.InvalidOrUnsupportedException;
+import java.util.List;
+import java.util.Objects;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.logging.Level;
+import static logging.LoggersRegistry.CONSOLE_LOGGER;
+import sim.ISimulationMember;
+import sim.ISynopsisString;
+import sim.Scenario;
+import sim.Simulation;
+import sim.space.cell.CellRegistry;
+import util.CommonFunctions;
+
+/**
+ *
+ * @author xvas
+ */
+public class MUGroupsRegistry implements ISimulationMember, ISynopsisString {
+
+    private final Simulation simulation;
+    private final SortedMap<Integer, MobileGroup> groups;
+    private final int groupsNum;
+    private final int totalNumOfMUs;
+    private final List<String> initPosGrp;
+    private final List<String> resetPosGrp;
+    private final List<Integer> _residenceDelayInSCGrp;
+    private final List<Double> _residenceDelayInSCGrpError;
+    private final List<Integer> _handoverDelayGrp;
+    private final List<Double> _handoverDelayGrpError;
+    private final List<Double> velocityMeanGrp;
+    private final List<Double> velocityStdevGrp;
+    private final List<Integer> roam_startGrp;
+    private final List<Integer> sizeGrp;
+    /**
+     * A list of probabilities that form the probabilities matrix and flag which
+     * denotes how the matrix should be interpreted.
+     */
+    private final List<double[][]> trans_probsPerGrp;
+
+    public SortedMap<Integer, MobileGroup> registeredGroups() {
+        return this.groups;
+    }
+
+    public int size() {
+        return registeredGroups().size();
+    }
+
+    public MUGroupsRegistry(Simulation _simulation) {
+        this.simulation = _simulation;
+
+        //<editor-fold defaultstate="collapsed" desc="load from properties, report consistnecy issues">
+        Scenario scenario = MUGroupsRegistry.this.simulation.getScenario();
+        try {
+            // appart from sizes of each group, defines also the number of registeredGroups
+            sizeGrp = scenario.listOfIntegersProperty(Space.MU__GROUP__SIZE);
+            groupsNum = sizeGrp.size();
+
+            // the following must have either one cross-group value, or one value per each group
+            //<editor-fold defaultstate="collapsed" desc="initPosGrp">
+            initPosGrp = scenario.listOfStringsProperty(Space.MU__GROUP__INIT__POS);
+            if (initPosGrp.size() != 1 && initPosGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__INIT__POS
+                        + " has " + initPosGrp.size() + " values. It  must have either one cross-group value or exactly"
+                        + " one value for each corresponding group. The number of groups is " + groupsNum);
+            }
+            //</editor-fold>
+            //<editor-fold defaultstate="collapsed" desc="resetPosGrp">
+            resetPosGrp = scenario.listOfStringsProperty(Space.MU__GROUP__RESET__POS);
+            if (resetPosGrp.size() != 1 && resetPosGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__RESET__POS
+                        + " has " + resetPosGrp.size() + " values. It  must have either one cross-group value or exactly"
+                        + " one value for each corresponding group. The number of groups is " + groupsNum);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="habdoff and residence delays">
+            _residenceDelayInSCGrp = scenario.listOfIntegersProperty(Space.MU__GROUP__RESIDENCE_DELAY);
+            if (_residenceDelayInSCGrp.size() != 1 && _residenceDelayInSCGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__RESIDENCE_DELAY
+                        + " has " + _residenceDelayInSCGrp.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + _residenceDelayInSCGrp.size() + " while the number of groups is " + groupsNum);
+            }
+
+            _residenceDelayInSCGrpError = scenario.listOfDoublesProperty(Space.MU__GROUP__RESIDENCE_DELAY_ERROR);
+            if (_residenceDelayInSCGrpError.size() != 1 && _residenceDelayInSCGrpError.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__RESIDENCE_DELAY_ERROR
+                        + " has " + _residenceDelayInSCGrpError.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + _residenceDelayInSCGrpError.size() + " while the number of groups is " + groupsNum);
+            }
+
+            _handoverDelayGrp = scenario.listOfIntegersProperty(Space.MU__GROUP__HANDOVER_DELAY);
+            if (_handoverDelayGrp.size() != 1 && _handoverDelayGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__HANDOVER_DELAY
+                        + " has " + _handoverDelayGrp.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + _handoverDelayGrp.size() + " while the number of groups is " + groupsNum);
+            }
+
+            _handoverDelayGrpError = scenario.listOfDoublesProperty(Space.MU__GROUP__HANDOVER_DELAY_ERROR);
+            if (_handoverDelayGrpError.size() != 1 && _handoverDelayGrpError.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__HANDOVER_DELAY_ERROR
+                        + " has " + _handoverDelayGrpError.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + _handoverDelayGrpError.size() + " while the number of groups is " + groupsNum);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="velocityMax_perGrp">
+            velocityStdevGrp = scenario.listOfDoublesProperty(Space.MU__GROUP__VELOCITY__STDEV);
+            if (velocityStdevGrp.size() != 1 && velocityStdevGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__VELOCITY__STDEV
+                        + " has " + velocityStdevGrp.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + velocityStdevGrp.size() + " while the number of groups is " + groupsNum);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="velocityMeanGrp">
+            velocityMeanGrp = scenario.listOfDoublesProperty(Space.MU__GROUP__VELOCITY__MEAN);
+            if (velocityMeanGrp.size() != 1 && velocityMeanGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__GROUP__VELOCITY__MEAN
+                        + " has " + velocityMeanGrp.size() + " values. It  must have either one cross-group value"
+                        + " or exactly one value per corresponding group. Currently it has "
+                        + velocityMeanGrp.size() + " while the number of groups is " + groupsNum);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="roam_start_perGrp">
+            roam_startGrp = scenario.listOfIntegersProperty(Space.MU__INIT__ROAM_START);
+            if (roam_startGrp.size() != 1 && roam_startGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Property " + Space.MU__INIT__ROAM_START + " has "
+                        + roam_startGrp.size() + " values. It  must have either one cross-group value or exactly "
+                        + "one value per corresponding group. Currently it has " + roam_startGrp.size()
+                        + " while the number of groups is " + groupsNum);
+            }
+//</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="trans_probsPerGrp">
+            trans_probsPerGrp = scenario.parseMobileTransProbs();
+            if (trans_probsPerGrp.size() != 1 && trans_probsPerGrp.size() != groupsNum) {
+                throw new InvalidOrUnsupportedException(
+                        "Transition probabilities " + Space.MU__TRANSITION_PROBABILITIES__MATRIX.name() + " has "
+                        + trans_probsPerGrp.size() + " defined values for one simulation run. It  must have either one"
+                        + " cross-group value or exactly " + groupsNum + ", i.e. one value per corresponding group of MUs");
+            }
+            //</editor-fold>
+
+        } catch (InvalidOrUnsupportedException ex) {
+            throw new InconsistencyException("Needed property is undefined or wrongly spelt", ex);
+        }
+        //</editor-fold>
+
+        int tmp_totalMUsNum = 0;
+        this.groups = new TreeMap<>();
+        for (int nxtGrpIdx = 0; nxtGrpIdx < groupsNum; nxtGrpIdx++) {
+            int nxt_grp__ID = nxtGrpIdx + 1;
+
+            //<editor-fold defaultstate="collapsed" desc="int residence and handoff delay">
+            int residenceDelayInSC = -1;
+            if (this._residenceDelayInSCGrp.size() == 1) {//cross group value
+                residenceDelayInSC = this._residenceDelayInSCGrp.get(0);
+            } else {
+                residenceDelayInSC = this._residenceDelayInSCGrp.get(nxtGrpIdx);
+            }
+
+            double residenceDelayInSCError = -1;
+            if (this._residenceDelayInSCGrpError.size() == 1) {//cross group value
+                residenceDelayInSCError = this._residenceDelayInSCGrpError.get(0);
+            } else {
+                residenceDelayInSCError = this._residenceDelayInSCGrpError.get(nxtGrpIdx);
+            }
+
+            int handoverDelayInSC = -1;
+            if (this._handoverDelayGrp.size() == 1) {//cross group value
+                handoverDelayInSC = this._handoverDelayGrp.get(0);
+            } else {
+                handoverDelayInSC = this._handoverDelayGrp.get(nxtGrpIdx);
+            }
+
+            double handoverDelayInSCError = -1.0;
+            if (this._handoverDelayGrpError.size() == 1) {//cross group value
+                handoverDelayInSCError = this._handoverDelayGrpError.get(0);
+            } else {
+                handoverDelayInSCError = this._handoverDelayGrpError.get(nxtGrpIdx);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="Velocity">
+            double meanVelocity = -1;
+            if (this.velocityMeanGrp.size() == 1) {//cross group value
+                meanVelocity = this.velocityMeanGrp.get(0);
+            } else {
+                meanVelocity = this.velocityMeanGrp.get(nxtGrpIdx);
+            }
+
+            double stdevVelocity = -1;
+            if (this.velocityStdevGrp.size() == 1) {//cross group value
+                stdevVelocity = this.velocityStdevGrp.get(0);
+            } else {
+                stdevVelocity = this.velocityStdevGrp.get(nxtGrpIdx);
+            }
+
+            if (stdevVelocity == 0) {
+                CONSOLE_LOGGER.log(Level.WARNING,
+                        "MUs in group {0} have a zero stdev velocity, which implies that they "
+                        + "move in constant speed during the simulation.", nxt_grp__ID
+                );
+
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="int _startMUsRoaming">
+            int startMUsRoaming = -1;
+            if (this.roam_startGrp.size() == 1) {//cross group value
+                startMUsRoaming = this.roam_startGrp.get(0);
+            } else {
+                startMUsRoaming = this.roam_startGrp.get(nxtGrpIdx);
+            }
+//</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="double[] _trans_probs">
+            double[][] transitionProbs = null;
+            if (this.trans_probsPerGrp.size() == 1) { //cross group value
+                transitionProbs = this.trans_probsPerGrp.get(0);
+            } else {
+                transitionProbs = this.trans_probsPerGrp.get(nxtGrpIdx);
+            }
+            //</editor-fold>
+
+            //<editor-fold defaultstate="collapsed" desc="String initPos, resetPos">
+            String initPos;
+            if (this.initPosGrp.size() == 1) {//cross group value
+                initPos = this.initPosGrp.get(0);
+            } else {
+                initPos = this.initPosGrp.get(nxtGrpIdx);
+            }
+            String resetPos;
+            if (this.resetPosGrp.size() == 1) {//cross group value
+                resetPos = this.resetPosGrp.get(0);
+            } else {
+                resetPos = this.resetPosGrp.get(nxtGrpIdx);
+            }
+            //</editor-fold>
+
+            tmp_totalMUsNum += sizeGrp.get(nxtGrpIdx);
+            MobileGroup nxt_grp = new MobileGroup(
+                    simulation, nxt_grp__ID, sizeGrp.get(nxtGrpIdx), initPos, resetPos,
+                    residenceDelayInSC, residenceDelayInSCError,
+                    handoverDelayInSC, handoverDelayInSCError,
+                    meanVelocity, stdevVelocity,
+                    startMUsRoaming, transitionProbs
+            );
+            this.groups.put(nxtGrpIdx, nxt_grp);
+        }//for
+        this.totalNumOfMUs = tmp_totalMUsNum;
+    }
+
+    /**
+     * @param id
+     * @return
+     * @throws InvalidOrUnsupportedException if the group does not exist. Note
+     * that group IDs start from index value 1.
+     */
+    public MobileGroup getGroup(int id) throws InvalidOrUnsupportedException {
+        MobileGroup _group = groups.get(id);
+        if (_group == null) {
+            throw new InvalidOrUnsupportedException(
+                    "No such group id. IDs for groups span from 1 to N, where N is the maximum number of groups defined for "
+                    + "this simulation, i.e. "
+                    + simulation.getScenario().listOfIntegersProperty(Space.MU__GROUP__SIZE).size());
+        }
+        return _group;
+    }
+
+    @Override
+    public final int simTime() {
+        return getSim().simTime();
+    }
+
+    @Override
+    public String simTimeStr() {
+        return "[" + simTime() + "]";
+    }
+
+    @Override
+    public final int simID() {
+        return getSim().getID();
+    }
+
+    @Override
+    public final Simulation getSim() {
+        return simulation;
+    }
+
+    @Override
+    public final CellRegistry simCellRegistry() {
+        return getSim().getCellRegistry();
+    }
+
+    /**
+     * Generates a unique universal ID for a MU such that the 1st MU member of
+     * the 1st group gets ID 1, the 1st MU of the 2nd group gets ID 2, the 1st
+     * MU of the 3rd group gets id 3 and so forth.
+     *
+     * Mathematically, the former is described by formula: (k-1) *
+     * #registeredGroups + grpID.
+     *
+     * CAUTION k must be greater than 0 and grpID must be a non negative value.
+     *
+     * @param grpID the ID of the group
+     * @param k the sequence number of the MU with respect to its group, e.g. 5
+     * for the 5th MU of the given group.
+     * @return
+     */
+    public int generateMobileID(int grpID, int k) {
+        if (k < 1) {
+            throw new RuntimeException("The sequence number k of the MU must be greater than zero.  "
+                    + "Value passed: k=" + k);
+        }
+        if (grpID < 0) {
+            throw new RuntimeException("The group id must be non negative.  Value passed grpID=" + grpID);
+        }
+        return grpID + (k - 1) * groupsNum;
+    }
+
+    /**
+     * @return the totalNumOfMUs
+     */
+    public int getTotalNumOfMUs() {
+        return totalNumOfMUs;
+    }
+
+    @Override
+    /**
+     * @return true iff same hashID.
+     */
+    public boolean equals(Object b) {
+        if (b == null) {
+            return false;
+        }
+
+        if (!(b instanceof MUGroupsRegistry)) {
+            return false;
+        }
+
+        MUGroupsRegistry rg = (MUGroupsRegistry) b;
+        return rg.getSim().equals(getSim());
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = 5;
+        hash = 97 * hash + Objects.hashCode(this.simulation);
+        hash = 97 * hash + Objects.hashCode(this.groups);
+        return hash;
+    }
+
+    @Override
+    public String toSynopsisString() {
+        return simulation.toString() + "; "
+                + CommonFunctions.toString(groups) + "; "
+                + " #groupos: " + groupsNum + "; "
+                + " # total num of mobiles: " + totalNumOfMUs;
+    }
+
+    @Override
+    public String toString() {
+        return toSynopsisString();
+    }
+
+}

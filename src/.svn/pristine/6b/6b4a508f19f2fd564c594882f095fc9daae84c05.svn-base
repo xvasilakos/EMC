@@ -1,0 +1,44 @@
+package app;
+
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import sim.content.ContentDocument;
+
+/**
+ * Resources that are common between different different simulations.
+ *
+ * Careful, synchronized sharing of resources for the sake of memory usage.
+ *
+ * @author xvas
+ */
+public class CrossSimResources {
+
+    private static final Logger LOG = Logger.getLogger(CrossSimResources.class.getName());
+
+    private final Map<Long, ContentDocument> _documents;
+
+    public CrossSimResources() {
+        this._documents = new TreeMap<>();
+    }
+
+    /**
+     * @return the the ContentDocument to which the specified id is mapped, or
+     * null if underlying map contains no mapping for the id
+     */
+    public ContentDocument getDocument(long id) {
+        synchronized (_documents) {
+            return _documents.get(id);
+        }
+    }
+
+    public void addDocument(long theID, ContentDocument theDoc) {
+        synchronized (_documents) {
+            if (_documents.put(theID, theDoc) != null) {
+                LOG.log(Level.WARNING,
+                        "Document is already considered: {0}", theDoc.toString());
+            }
+        }
+    }
+}

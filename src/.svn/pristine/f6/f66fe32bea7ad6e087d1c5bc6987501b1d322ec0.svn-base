@@ -1,0 +1,49 @@
+package caching.rplc.lru;
+
+import caching.interfaces.rplc.ILRURplc;
+import caching.Utils;
+import caching.base.AbstractOracle;
+import java.util.Set;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.ITimeBuffer;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.cell.smallcell.TimeBufferImpl;
+import sim.space.users.CachingUser;
+
+/**
+ * Must check functionality after severe changes in code
+ *
+ * Used for optimal caching, i.e. it tries to cache the items in the _cell where
+ * the mobile will handoff next. Essentially, it is a naive method, thus it uses
+ * the type01 naive implementation of caching decisions.
+ *
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+@Deprecated
+public final class OracleLRU extends AbstractOracle implements ILRURplc {
+
+    private static final OracleLRU singleton = new OracleLRU();
+
+    public static OracleLRU instance() {
+        return singleton;
+    }
+
+    public static Class bufferType() {
+        return TimeBufferImpl.class;
+    }
+
+    private OracleLRU() {
+    }
+
+    @Override
+    public Set<Chunk> cacheDecision(CachingUser mu, SmallCell scFuture) throws Throwable {
+        return Utils.naiveLRUCacheDecision(this, mu, scFuture, false);
+    }
+
+    @Override
+    public Set<Chunk> optForEviction(ITimeBuffer evictBuffer, Chunk item) throws Throwable {
+        return Utils.optForEvictionLRUAccess(evictBuffer, item);
+    }
+
+}

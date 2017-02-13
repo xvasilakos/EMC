@@ -1,0 +1,38 @@
+package stats.gainstats.gains;
+
+import caching.base.AbstractCachingPolicy;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import sim.content.request.DocumentRequest;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+import stats.StatisticException;
+import stats.handlers.AbstractGainStat;
+
+/**
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class TimeToConsume extends AbstractGainStat<CachingUser, SmallCell, DocumentRequest> {
+
+    public TimeToConsume(AbstractCachingPolicy cachingMethod) {
+        super(cachingMethod);
+    }
+
+    @Override
+    public final double computeGain(CachingUser user, DocumentRequest nxtRequest) throws StatisticException {
+
+        int issuedAtSimTime = nxtRequest.getIssuedAtSimTime();
+        int competionSimTime = nxtRequest.getCompetionSimTime(getCachingPolicy());
+
+        return competionSimTime - issuedAtSimTime;
+    }
+
+    @Override
+    public String title(String str) {
+        return getClass().getName() + "<" + str + ">" + "(" + getCachingPolicy().toString().substring(8) + ")";
+    }
+
+}

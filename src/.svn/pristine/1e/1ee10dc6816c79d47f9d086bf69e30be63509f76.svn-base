@@ -1,0 +1,54 @@
+package stats.gainstats.gains;
+
+import caching.base.AbstractCachingPolicy;
+import java.util.List;
+import sim.content.request.DocumentRequest;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+import stats.StatisticException;
+import stats.handlers.AbstractGainStat;
+
+/**
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class HITPercent extends AbstractGainStat<CachingUser, SmallCell, DocumentRequest> {
+
+    public HITPercent(AbstractCachingPolicy cachingMethod) {
+        super(cachingMethod);
+    }
+
+    @Override
+    public final double computeGain(CachingUser user, DocumentRequest nxtRequest) throws StatisticException {
+
+        List<Chunk> consumedChunksHitsHistory = nxtRequest.getChunksCacheHitsHistory(getCachingPolicy());
+//        List<Chunk> consumedChunksFromBH = nxtRequest.getChunksConsumedHistoryFromBH(getCachingPolicy());
+//        List<Chunk> consumedChunksFromMC = nxtRequest.getChunksConsumedHistoryFromMCWhileConnectedToSC(getCachingPolicy());
+
+        double cacheHit = consumedChunksHitsHistory.size();
+
+        double ifAllFromMC = nxtRequest.referredContentDocument().chunks().size();
+//        double ifAllFromMC
+//                = consumedChunksFromMC.size()
+//                + consumedChunksFromBH.size()
+//                + consumedChunksHitsHistory.size();
+
+        if (ifAllFromMC == 0) {
+            return Double.NaN;
+        }
+
+        return cacheHit / ifAllFromMC;
+    }
+
+    @Override
+    public String title() {
+        return "%Hit(" + getCachingPolicy().toString().substring(8) + ")";
+    }
+
+    @Override
+    public String title(String str) {
+        return "%Hit" + "<" + str + ">" + "(" + getCachingPolicy().toString().substring(8) + ")";
+    }
+
+}

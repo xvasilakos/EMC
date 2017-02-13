@@ -1,0 +1,66 @@
+package stats.gainstats.cmpt2;
+
+import caching.base.AbstractCachingPolicy;
+import java.util.Iterator;
+import java.util.List;
+import sim.content.request.DocumentRequest;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+import stats.StatisticException;
+import stats.handlers.BaseHandler;
+import stats.handlers.IComputeGain;
+
+/**
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class GAINPercent_BH extends BaseHandler implements IComputeGain<CachingUser, SmallCell> {
+
+    private final AbstractCachingPolicy _cachingPolicy;
+
+    public GAINPercent_BH(AbstractCachingPolicy cachingMethod) {
+        super();
+        _cachingPolicy = cachingMethod;
+    }
+
+    @Override
+    public final double compute2(CachingUser user) throws StatisticException {
+        double gainSum = 0;
+        double totalCost = 0;
+
+        Iterator<DocumentRequest> iterator = user.getRequests().iterator();
+        while (iterator.hasNext()) {
+
+            DocumentRequest nxtRequest = iterator.next();
+            List<Chunk> consumedChunksHitsHistory = nxtRequest.getChunksCacheHitsHistory(_cachingPolicy);
+            List<Chunk> consumedChunksFromBH = nxtRequest.getChunksConsumedHistoryFromBH(_cachingPolicy);
+            List<Chunk> consumedChunksFromMC = nxtRequest.getChunksConsumedHistoryFromMC(_cachingPolicy);
+            List<Chunk> consumedChunksFromMCWhenDisconnected = nxtRequest.getChunksConsumedHistoryFromMCWhenDisconnected(_cachingPolicy);
+
+            double backhaul = nxtRequest.gainOfTransferSCThroughBH() * consumedChunksFromBH.size();
+
+            double ifAllFromMC = nxtRequest.costOfTransferMC_BH();
+            ifAllFromMC *= consumedChunksFromMCWhenDisconnected.size()
+                    + consumedChunksFromMC.size()
+                    + consumedChunksFromBH.size()
+                    + consumedChunksHitsHistory.size();
+
+            gainSum += backhaul;
+            totalCost += ifAllFromMC;
+        }
+        if (gainSum == 0) {
+            return 0;
+        }
+        if (totalCost == 0) {
+            throw new StatisticException("Impossible to compute");
+        }
+
+        return gainSum / totalCost;
+    }
+
+    @Override
+    public String getStatTitle() {
+        return "%GAIN_BH(" + _cachingPolicy.toString().substring(8) + ")";
+    }
+}

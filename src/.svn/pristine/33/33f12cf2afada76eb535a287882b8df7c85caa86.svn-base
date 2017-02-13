@@ -1,0 +1,551 @@
+package sim.space.cell;
+
+import app.properties.Space;
+import app.properties.valid.Values;
+import exceptions.InvalidOrUnsupportedException;
+import java.io.FileNotFoundException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.PriorityQueue;
+import java.util.Set;
+import java.util.TreeMap;
+import sim.ISimulationMember;
+import sim.ISynopsisString;
+import sim.SimulationBase;
+import sim.space.Area;
+import sim.space.Point;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.UserGroup;
+import sim.space.users.mobile.MobileGroupsRegistry;
+import sim.space.users.mobile.MobileUser;
+import util.CommonFunctions;
+import util.Couple;
+
+/**
+ * A registry of macro cell and small cells
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class CellRegistry implements ISimulationMember, ISynopsisString {
+
+    private final SimulationBase _simulation;
+    /**
+     * key: ID of SC
+     *
+     * Value: SmallCell with the given ID
+     */
+    private final Map<Integer, SmallCell> _cells;
+    private final MacroCell _macroCell;
+    /**
+     * Number of Handoffs from a source smaller, mapped to a key that depends on
+     * probabilities policy.
+     *
+     * Uses a string key which depends on the handoff probabilities computation
+     * policy. If the key is the id of a small cell only, then probabilities
+     * depend only on the location of MUs before they handoff. Alternatively, if
+     * the key depends on both the MUs' group and their cell, then probabilities
+     * are computed per location and group.
+     */
+    private final Map<String, Double> handoffs__outgoing = new HashMap<>();
+    private final Map<String, Double> handoffs__incoming = new HashMap<>();
+    private final Map<Couple<String, String>, Double> handoffsBetweenCells = new HashMap<>();
+    private final Map<Couple<String, String>, Double> handoverDurationTimesBetweenCells = new HashMap<>();
+    private final Map<Couple<String, String>, Double> residenceTimesInCells = new HashMap<>();
+    private final String _mobilityModel;
+    private final MobileGroupsRegistry _muGroupRegistry;
+    private final double _probJitter;
+
+    public CellRegistry(
+            SimulationBase sim, MobileGroupsRegistry groupRegistry, Set<SmallCell> smallCells,
+            MacroCell mc, Area area) throws InvalidOrUnsupportedException {
+
+        this._simulation = sim;
+        this._muGroupRegistry = groupRegistry;
+
+        this._cells = new TreeMap<>();
+        Iterator<SmallCell> cellsIter = smallCells.iterator();
+        while (cellsIter.hasNext()) {
+            SmallCell sc = cellsIter.next();
+            int scID = sc.getID();
+            this._cells.put(scID, sc);
+        }
+
+        this._macroCell = mc;
+
+        _mobilityModel = sim.getScenario().stringProperty(Space.MOBILITY_MODEL);
+
+        _probJitter = sim.getScenario().doubleProperty(Space.SC__HANDOFF_PROBABILITY__STDEV);
+    }
+
+    @Override
+    public String toString() {
+        return this._simulation.toString() + " "
+                + this._muGroupRegistry.toString() + " "
+                + "; Cells: <" + CommonFunctions.toString(_cells)
+                + ">; macrocell: " + _macroCell.toString()
+                + "; mobility model: " + _mobilityModel
+                + "; probability jitter: " + _probJitter;
+    }
+
+    public String toSynopsisString() {
+        return this._simulation.toString() + " "
+                + this._muGroupRegistry.toSynopsisString() + " "
+                + "; Cells: <" + CommonFunctions.toString(_cells)
+                + ">";
+    }
+
+    public void printProbsToCurrentPath() {
+        try (PrintStream printer = new PrintStream("./probs.txt")) {
+            Set<Couple<String, String>> betweenCellsKeySet = handoffsBetweenCells.keySet();
+            Iterator<Couple<String, String>> betweenCells_it = betweenCellsKeySet.iterator();
+            while (betweenCells_it.hasNext()) {
+                Couple<String, String> couple = betweenCells_it.next();
+                printer.println("src: " + couple.getFirst());
+                printer.println("dest: " + couple.getSecond());
+            }
+        } catch (FileNotFoundException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /**
+     * @return the cellRegistry
+     */
+    public Collection<SmallCell> cellsRegistered() {
+        return Collections.unmodifiableCollection(_cells.values());
+    }
+
+    /**
+     * @return the macroCell
+     */
+    public MacroCell getMacroCell() {
+        return _macroCell;
+    }
+
+    /**
+     * @return a randomly chosen small cell from the registry
+     */
+    public SmallCell rndSC() {
+        Collection<SmallCell> scs = cellsRegistered();
+
+        int size = scs.size();
+        int rnd = _simulation.getRandomGenerator().randIntInRange(0, size - 1);
+        int i = 0;
+        for (SmallCell cell : scs) {
+            if (i == rnd) {
+                return cell;
+            }
+            i++;
+        }
+
+        throw new RuntimeException("Wrong random number generated.");
+    }
+
+    /**
+     * @param mu
+     * @return the small cell covering the current position of mu that is closer
+     * to the mu, or null if the mu is out of coverage of any small cell.
+     */
+    public PriorityQueue<SmallCell> closestCoveringSCs(MobileUser mu) {
+        Point muPoint = mu.coordinates();
+        return muPoint.getClosestCoveringSCs(false, true);
+    }
+
+    public SmallCell coveringRandomSmallcell(MobileUser mu) throws InvalidOrUnsupportedException {
+        Point muPoint = mu.coordinates();
+        List<SmallCell> coveringSmallerCells = new ArrayList(muPoint.getCoveringSCs());
+        if (coveringSmallerCells.isEmpty()) {
+            return null;
+        }
+
+        int lastPos = coveringSmallerCells.size() - 1;
+        int rndPos = _simulation.getRandomGenerator().randIntInRange(0, lastPos);
+        return coveringSmallerCells.get(rndPos);
+    }
+
+    @Override
+    public final int simID() {
+        return _simulation.getID();
+    }
+
+    @Override
+    public final SimulationBase getSim() {
+        return _simulation;
+    }
+
+    @Override
+    public final int simTime() {
+        return _simulation.simTime();
+    }
+
+    @Override
+    public String simTimeStr() {
+        return "[" + simTime() + "]";
+    }
+
+    @Override
+    public CellRegistry simCellRegistry() {
+        return this;
+    }
+
+    /**
+     * Update how much time has a mobile stayed connected to nextSC given that
+     * it was handed over to nextSC from prevSC.
+     *
+     * @param grp
+     * @param comingFrom
+     * @param residenceSC
+     * @param duration
+     */
+    public void updtResidenceTime(UserGroup grp, SmallCell comingFrom,
+            SmallCell residenceSC, int duration) {
+
+        if (comingFrom == null) {
+            return; // can happen at startup
+        }
+
+        String comingFromID, residenceID;
+        switch (_mobilityModel) {
+            case Values.LOCATION:
+                comingFromID = comingFrom.getID() + "";
+                residenceID = residenceSC.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                comingFromID = CommonFunctions.combineCellMUGroup(comingFrom, grp == null ? - 1 : grp.getId());
+                residenceID = CommonFunctions.combineCellMUGroup(residenceSC, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " set for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+
+        Double between = residenceTimesInCells.get(new Couple(comingFromID, residenceID));
+        double pastVal = between == null ? 0.0 : between;
+
+        double weight = residenceSC.getConnectedMUs().isEmpty() ? 1.0 : 1.0 / (residenceSC.getConnectedMUs().size());// weight en (0, 1]
+        residenceSC.updtAvgResidenceDuration(duration, weight);
+
+        double val = weight * pastVal + (1.0 - weight) * duration;
+        residenceTimesInCells.put(new Couple(comingFromID, residenceID), val);
+    }
+
+    public void updtHandoffTransitionTime(MobileUser mu, SmallCell disconFrom, SmallCell conTo, int duration) {
+
+        UserGroup grp = mu.getUserGroup();
+
+        if (disconFrom == null) {
+            return; // can happen at startup
+        }
+
+        String disconFromID, conToID;
+        switch (_mobilityModel) {
+            case Values.LOCATION:
+                disconFromID = disconFrom.getID() + "";
+                conToID = conTo.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                disconFromID = CommonFunctions.combineCellMUGroup(disconFrom, grp == null ? - 1 : grp.getId());
+                conToID = CommonFunctions.combineCellMUGroup(conTo, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " set for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+
+        conTo.addToSimRoundHandoverDuration(duration);
+
+        Double between = handoverDurationTimesBetweenCells.get(new Couple(disconFromID, conToID));
+        double pastVal = between == null ? duration : between;
+
+        /*
+        * exponential smoothing has an issue with giving too much weight
+        * on the initial value. The initial value is unknown. So use this
+        * trick to give gradually more weight to more recent estimations
+         */
+        double pastValWeight = 0.9;//(simTime() % 9 + 2) / 10.0;// 20%, 20%, ...90%
+        double val = pastValWeight * pastVal + (1.0 - pastValWeight) * duration;
+        handoverDurationTimesBetweenCells.put(new Couple(disconFromID, conToID), val);
+
+    }
+
+    /**
+     * Updates the history of handoff probabilities between handoff source and
+     * handoff destination SCs.
+     *
+     * @param mu
+     * @param src
+     * @param dest
+     */
+    public void updtHandoffProbs(MobileUser mu, SmallCell src, SmallCell dest) {
+
+        UserGroup grp = mu.getUserGroup();
+
+        String srcID, destID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+            case Values.LOCATION:
+                srcID = src.getID() + "";
+                destID = dest.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                srcID = CommonFunctions.combineCellMUGroup(src, grp == null ? - 1 : grp.getId());
+                destID = CommonFunctions.combineCellMUGroup(dest, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " set for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+
+        Double outgoing = handoffs__outgoing.get(srcID);
+        Double incoming = handoffs__incoming.get(destID);
+        Double between = handoffsBetweenCells.get(new Couple(srcID, destID));
+        handoffs__outgoing.put(srcID, (outgoing == null ? 0.0 : outgoing) + 1);
+        handoffs__incoming.put(destID, (incoming == null ? 0.0 : incoming) + 1);
+        handoffsBetweenCells.put(new Couple(srcID, destID), (between == null ? 0.0 : between) + 1);
+    }
+
+    /**
+     * @param grp
+     * @param src
+     * @param dest
+     * @return the handoffs__total__Src_toDestCell
+     */
+    public double getHandoffsBetweenCells(UserGroup grp, SmallCell src, SmallCell dest) {
+
+        String srcID, destID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+
+            case Values.LOCATION:
+                srcID = src.getID() + "";
+                destID = dest.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                srcID = CommonFunctions.combineCellMUGroup(src, grp == null ? - 1 : grp.getId());
+                destID = CommonFunctions.combineCellMUGroup(dest, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+        Double num = handoffsBetweenCells.get(new Couple(srcID, destID));
+        if (num == null) {
+            return 0;
+        }
+        return num;
+    }
+
+    public double getResidenceDurationBetweenCells(UserGroup grp, SmallCell fromSC, SmallCell residentSC) {
+
+        String cmingFromSCID, residentSCID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+
+            case Values.LOCATION:
+                cmingFromSCID = fromSC.getID() + "";
+                residentSCID = residentSC.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                cmingFromSCID = CommonFunctions.combineCellMUGroup(fromSC, grp == null ? - 1 : grp.getId());
+                residentSCID = CommonFunctions.combineCellMUGroup(residentSC, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+        Double num = residenceTimesInCells.get(new Couple(cmingFromSCID, residentSCID));
+        if (num == null) {
+            return 0;
+        }
+        return num;
+    }
+
+    public double getHandverDurationBetweenCells(UserGroup grp, SmallCell disconSC, SmallCell conToSC) {
+
+        String disconSCID, connSCID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+
+            case Values.LOCATION:
+                disconSCID = disconSC.getID() + "";
+                connSCID = conToSC.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                disconSCID = CommonFunctions.combineCellMUGroup(disconSC, grp == null ? - 1 : grp.getId());
+                connSCID = CommonFunctions.combineCellMUGroup(conToSC, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+        Double num = handoverDurationTimesBetweenCells.get(new Couple(disconSCID, connSCID));
+
+        return num == null ? 0 : num;
+    }
+
+    public double getHandoffsOutgoing(MobileUser mu, SmallCell src) {
+
+        UserGroup grp = mu.getUserGroup();
+        String srcID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+
+            case Values.LOCATION:
+                srcID = src.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                srcID = CommonFunctions.combineCellMUGroup(src, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+        Double num = handoffs__outgoing.get(srcID);
+        if (num == null) {
+            return 0;
+        }
+        return num;
+    }
+
+    public double getHandoffsIncoming(MobileUser mu, SmallCell dest) {
+
+        UserGroup grp = mu.getUserGroup();
+        String destID;
+        // increase transtion-counting maps //
+        switch (_mobilityModel) {
+
+            case Values.LOCATION:
+                destID = dest.getID() + "";
+                break;
+
+            case Values.LOCATION__PLUS__GROUP:
+                destID = CommonFunctions.combineCellMUGroup(dest, grp == null ? - 1 : grp.getId());
+                break;
+
+            default:
+                throw new UnsupportedOperationException("Unknonwn or unsupported policy " + _mobilityModel
+                        + " for parameter " + Space.MOBILITY_MODEL.propertyName());
+        }//switch
+        Double num = handoffs__incoming.get(destID);
+        if (num == null) {
+            return 0;
+        }
+        return num;
+    }
+
+    /**
+     * @param mu
+     * @param srcCell
+     * @param destCell
+     * @return the transition probability or -1 in case there is no transition
+     * previously recorded or in case the source and destination cells coincide.
+     * transition between the cells.
+     */
+    public double handoffProbability(MobileUser mu, SmallCell srcCell, SmallCell destCell) {
+
+        if (destCell.equals(srcCell)) {
+            return 0;
+        }
+
+        double handoffsBetweenCells = getHandoffsBetweenCells(mu.getUserGroup(), srcCell, destCell);
+        double outgoingHandoffs = getHandoffsOutgoing(mu, srcCell);
+
+        if (handoffsBetweenCells == 0
+                || outgoingHandoffs == 0) {
+            return 0.0;
+        }
+
+        return getSim().getRandomGenerator().getGaussian(1.0, _probJitter)
+                /*robustness testing: intentional random error*/
+                * handoffsBetweenCells / outgoingHandoffs;
+    }
+
+    public SmallCell getCellCenteredAt(Point point) {
+        for (SmallCell smallerCell : _cells.values()) {
+            if (smallerCell.coordinates().getX() == point.getX()
+                    && smallerCell.coordinates().getY() == point.getY()) {
+                return smallerCell;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param _ID
+     * @return The SC for this ID or SmallCell.NONE if no cell does with that ID
+     * exists (such as negative IDs).
+     */
+    public SmallCell scByID(Integer _ID) {
+        if (_ID < 0) {
+            return null;
+        }
+
+        return this._cells.get(_ID);
+
+    }
+
+    public Map<Integer, Double> getTransitionNeighborsOf(SmallCell _currentlyConnectedSC) {
+        //@todo make a method that returns probabilities mapped to cell ids.
+        // this method will be used for fixed transition probabilities between cell 
+        // loaded by a trace of small cells.
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    /**
+     * @return true iff same hashID.
+     */
+    public boolean equals(Object b) {
+        if (b == null) {
+            return false;
+        }
+
+        if (!(b instanceof CellRegistry)) {
+            return false;
+        }
+
+        CellRegistry rg = (CellRegistry) b;
+        return rg.getSim().equals(getSim());
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = 7;
+        hash = 61 * hash + Objects.hashCode(this._simulation);
+        hash = 61 * hash + Objects.hashCode(this._cells);
+        return hash;
+    }
+
+    /**
+     * @return the mobilityModel
+     */
+    public String getMobilityModel() {
+        return _mobilityModel;
+    }
+
+    public SmallCell getCellByID(Integer id) {
+        return _cells.get(id);
+    }
+
+}

@@ -1,0 +1,52 @@
+package caching.incremental;
+
+import caching.base.AbstractNaive;
+import caching.interfaces.incremental.IIncrementalBase;
+import caching.interfaces.rplc.IGainNoRplc;
+import java.util.Collection;
+import sim.run.SimulationBaseRunner;
+import sim.content.Chunk;
+import static sim.space.cell.smallcell.BufferBase.BufferAllocationStatus.Success;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+
+/**
+ * @author xvas
+ */
+public class NaiveSmart extends AbstractNaive implements IGainNoRplc, IIncrementalBase {
+
+    private static final NaiveSmart SINGLETON = new NaiveSmart();
+
+    public static NaiveSmart instance() {
+        return SINGLETON;
+    }
+
+    protected NaiveSmart() {
+    }
+
+    @Override
+    public String nickName() {
+        return getClass().getSimpleName();
+    }
+
+    @Override
+    public int cacheDecision(
+            SimulationBaseRunner sim, CachingUser cu, Collection<Chunk> requestedChunks,
+            SmallCell hostSC, SmallCell targetSC) throws Throwable {
+
+        int totalSizeCached = 0;
+        for (Chunk nxtChunk : requestedChunks) {
+
+            if (targetSC.isCached(this, nxtChunk)) {
+                targetSC.addCacher(cu, this, nxtChunk);
+                continue;
+            }
+
+            if (targetSC.cacheItemAttempt(cu, this, nxtChunk) == Success) {
+                totalSizeCached += nxtChunk.sizeInBytes();
+            }
+        }
+        return totalSizeCached;
+    }
+
+}

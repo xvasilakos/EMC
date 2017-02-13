@@ -1,0 +1,892 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package sim;
+
+import app.SimulatorApp;
+import app.properties.StatsProperty;
+import app.properties.valid.Values;
+import caching.base.AbstractCachingPolicy;
+import exceptions.CriticalFailureException;
+import exceptions.InvalidOrUnsupportedException;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Queue;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.TreeSet;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import sim.space.cell.CellRegistry;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+import sim.space.users.mobile.MobileUser;
+import stats.StatisticException;
+import stats.Statistics;
+import stats.handlers.ICompute0;
+import stats.handlers.ICompute3;
+import stats.handlers.ICompute4;
+import stats.handlers.iterative.sc.cmpt4.ComputeAllPoliciesImpl;
+import stats.handlers.iterative.sc.cmpt5.UnonymousCompute5;
+import stats.handlers.iterative.sc.cmpt6.UnonymousCompute6;
+import stats.output.Printer;
+import stats.handlers.IComputePercent;
+import stats.handlers.IComputeGain;
+
+/**
+ * Methods for handling statistics for this _sim.
+ */
+public final class StatsHandling implements ISimulationMember {
+
+    private static final Logger LOGGER = Logger.getLogger(StatsHandling.class.getCanonicalName());
+
+    private final Statistics simStatististics;
+    /**
+     * for updating statistics after iterating mobile users regardless if they
+     * move or not
+     */
+    private final Set<stats.handlers.IComputePercent> iterative__mu__cmpt1;
+
+    /**
+     * for updating statistics after mobile users last move.
+     *
+     * E.g: Gains etc.. from package stats.gainstats.cmpt2
+     */
+    private final Set<stats.handlers.IComputeGain> gain_cmpt2;
+    /**
+     * for updating statistics after iterating over SCs
+     */
+    private final Set<ICompute4> iterative__sc__cmpt4_no_policies;
+    private final Set<ComputeAllPoliciesImpl> iterative__sc__cmpt4;
+    private final Set<UnonymousCompute5> iterative__sc__cmpt5;
+    private final Set<UnonymousCompute6> iterative__sc__cmpt6;
+    /**
+     * choose randomly one SC and study its behavior in each _sim round
+     */
+    private final Set<ICompute0> _handlers__fixed_sc__cmpt0;
+    private final Set<ICompute0> _handlers__fixed_sc__cmpt0__no_policy;
+    private List<SmallCell> monitorSC; // the cell IDs to monitor specialy
+    private final Printer statsPrinterAggregates;
+    private final Printer _statsPrinterTransient;
+    private final Queue<String> _resultsTransientQ;
+    private final boolean _printStddev;
+    private final int _clockMaxTime;
+    private final int _minTime;
+    private final Statistics.ConfidenceInterval confInterval;
+    private final boolean _printMean;
+    private final boolean _printAggregates;
+    private final boolean _printTransient;
+    private final int _printTransientFlushPeriod;
+    private final int _aggregatesAvgPeriod;
+    private final SimulationBase<?> _sim;
+    private final Scenario _scenarioSetup;
+    private int _statHandoversCount;
+    private boolean _isPrintingLocked = false;
+
+    protected StatsHandling(final SimulationBase<?> sim) {
+        this._sim = sim;
+        this._scenarioSetup = sim.getScenario();
+        try {
+            // Load from scenario parameters
+            _printMean = _scenarioSetup.isTrue(StatsProperty.STATS__PRINT__MEAN);
+            _printStddev = _scenarioSetup.isTrue(StatsProperty.STATS__PRINT__STDDEV);
+            _printAggregates = _scenarioSetup.isTrue(StatsProperty.STATS__PRINT__AGGREGATES);
+            _printTransient = _scenarioSetup.isTrue(StatsProperty.STATS__PRINT__TRANSIENT);
+            _printTransientFlushPeriod = _scenarioSetup.intProperty(StatsProperty.STATS__PRINT__TRANSIENT__FLUSH_PERIOD);
+            _aggregatesAvgPeriod = _scenarioSetup.intProperty(StatsProperty.STATS__AGGREGATES__AVG_PERIOD);
+            if (_aggregatesAvgPeriod <= 0) {
+                //
+                throw new RuntimeException(StatsProperty.STATS__AGGREGATES__AVG_PERIOD.name() + " property must be a positive integer value." + " It currently set to " + _aggregatesAvgPeriod);
+            }
+            _clockMaxTime = _scenarioSetup.intProperty(app.properties.Simulation.Clock.MAX_TIME);
+            if (_clockMaxTime <= 0) {
+                //
+                throw new RuntimeException("Parameter " + app.properties.Simulation.Clock.MAX_TIME.propertyName() + " does not accept negative interger or zero values: " + _clockMaxTime);
+            }
+            _minTime = _scenarioSetup.intProperty(StatsProperty.STATS__MIN_TIME);
+            if (_minTime < 0) {
+                //
+                throw new RuntimeException(StatsProperty.STATS__MIN_TIME + "  property can not be a negative integer value.");
+            }
+            if (_minTime >= _clockMaxTime) {
+                //
+                throw new RuntimeException(StatsProperty.STATS__MIN_TIME.name() + " property = " + _minTime + " can not be set to less than property " + app.properties.Simulation.Clock.MAX_TIME.name() + " = " + _clockMaxTime);
+            }
+            String _conf_interval_z = _scenarioSetup.stringProperty(StatsProperty.STATS__CONF_INTERVAL_Z);
+            confInterval = Statistics.ConfidenceInterval.find(_conf_interval_z);
+            String currSimStatsDirPath = SimulatorApp.currentSimulationStatsDirPath();
+            this.simStatististics = new Statistics(sim);
+            //<editor-fold defaultstate="collapsed" desc="initialize printers for aggregated and transient results">
+            try {
+                if (_printAggregates) {
+                    this.statsPrinterAggregates = new Printer(sim, _scenarioSetup, currSimStatsDirPath, "agg", ".csv");
+                } else {
+                    this.statsPrinterAggregates = null;
+                }
+                if (_printTransient) {
+                    this._statsPrinterTransient = new Printer(sim, _scenarioSetup, currSimStatsDirPath, "trn", ".csv");
+                    _resultsTransientQ = new LinkedList<>();
+                } else {
+                    this._statsPrinterTransient = null;
+                    this._resultsTransientQ = null;
+                }
+            } catch (InvalidOrUnsupportedException | IOException ex) {
+                throw new RuntimeException("While initializing printers for aggregated and transient results ", ex);
+            }
+            //</editor-fold>
+            //<editor-fold defaultstate="collapsed" desc="_handlers__sc for monitor SC using reflection">
+            monitorSC = sim.monitorSCs();
+            this._handlers__fixed_sc__cmpt0
+                    = initFixedSCCmpt0(
+                            StatsProperty.STATS__HANLDERS__FIXED_SC__CMPT0,
+                            monitorSC
+                    );
+            this._handlers__fixed_sc__cmpt0__no_policy
+                    = initFixedSCCmpt0NoPolicies(
+                            StatsProperty.STATS__HANLDERS__FIXED_SC__CMPT0__NO_POLICIES,
+                            monitorSC
+                    );
+        } //</editor-fold>
+        catch (Exception ex) {
+            throw new CriticalFailureException(ex);
+        }
+        //<editor-fold defaultstate="collapsed" desc="this.iterative__sc__cmpt{1,2} using reflection">
+        try {
+            this.iterative__sc__cmpt4_no_policies = initCmpt4Nopolicies(StatsProperty.STATS__HANLDERS__ITERATIVE__SC__CMPT4__NO_POLICY);
+            this.iterative__sc__cmpt4 = initCmpt4(StatsProperty.STATS__HANLDERS__ITERATIVE__SC__CMPT4);
+            this.iterative__sc__cmpt5 = initCmpt5(StatsProperty.STATS__HANLDERS__ITERATIVE__SC__CMPT5);
+            this.iterative__sc__cmpt6 = initCmpt6(StatsProperty.STATS__HANLDERS__ITERATIVE__SC__CMPT6);
+        } catch (IllegalAccessException | ClassNotFoundException | RuntimeException | InstantiationException | InvalidOrUnsupportedException | NoSuchMethodException | InvocationTargetException | StatisticException ex) {
+            throw new RuntimeException(ex);
+        }
+        //</editor-fold>
+        //<editor-fold defaultstate="collapsed" desc="this.iterative__mu__cmpt{1,2} using reflection">
+        try {
+            this.iterative__mu__cmpt1 = initCmpt1(StatsProperty.STATS__HANLDERS__ITERATIVE__MU__CMPT1);
+        } catch (IllegalAccessException | ClassNotFoundException | RuntimeException | InstantiationException | InvalidOrUnsupportedException ex) {
+            throw new RuntimeException(ex);
+        } //</editor-fold>
+        //<editor-fold defaultstate="collapsed" desc="this.iterative__mu__handover__cmpt{1,2,3} using reflection">
+        try {
+            this.gain_cmpt2 = initCmpt2(StatsProperty.STATS__GAINSTATS__CMPT2);
+        } catch (IllegalAccessException | ClassNotFoundException | RuntimeException | InstantiationException | InvalidOrUnsupportedException | NoSuchMethodException | InvocationTargetException | StatisticException ex) {
+            throw new RuntimeException(ex);
+        }
+        //</editor-fold>
+    }
+
+    /**
+     * Used to initialize stats handlers of type IComputePercent, for a given
+     * StatsProperty. Note that the passed StatsProperty's name must coincide
+     * with the package name of each statistics handler loaded.
+     *
+     * @param statsProp
+     * @param handlers2Init
+     * @throws IllegalAccessException
+     * @throws ClassNotFoundException
+     * @throws RuntimeException
+     * @throws InstantiationException
+     * @throws InvalidOrUnsupportedException
+     */
+    private Set<IComputePercent> initCmpt1(StatsProperty statsProp) throws IllegalAccessException, ClassNotFoundException, RuntimeException, InstantiationException, InvalidOrUnsupportedException {
+        Set<IComputePercent> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    Object newInstance = Class.forName(statsProp.propertyName() + "." + nxtHandlerName).newInstance();
+                    if (!(newInstance instanceof IComputePercent)) {
+                        throw new RuntimeException("No known stats handler:" + statsProp.name() + "." + nxtHandlerName);
+                    }
+                    IComputePercent hndlr = (IComputePercent) newInstance;
+                    initHdlSet.add(hndlr);
+                    this.simStatististics.addTitle(hndlr.getStatTitle());
+                    LOGGER.log(Level.FINE, "Loaded new stats handler: {0}",
+                            newInstance.getClass().getCanonicalName()
+                    );
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    /**
+     * Used to initialize stats handlers of type IComputeGain.
+     *
+     * @param statsProp
+     * @return
+     * @throws IllegalAccessException
+     * @throws ClassNotFoundException
+     * @throws RuntimeException
+     * @throws InstantiationException
+     * @throws InvalidOrUnsupportedException
+     * @throws NoSuchMethodException
+     * @throws IllegalArgumentException
+     * @throws InvocationTargetException
+     * @throws StatisticException
+     */
+    private Set<IComputeGain> initCmpt2(StatsProperty statsProp)
+            throws IllegalAccessException, ClassNotFoundException,
+            RuntimeException, InstantiationException,
+            InvalidOrUnsupportedException, NoSuchMethodException,
+            IllegalArgumentException, InvocationTargetException, StatisticException {
+        Set<IComputeGain> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    // for every caching policy used
+                    for (AbstractCachingPolicy nxtCachingPolicy : _sim.getCachingPolicies()) {
+                        Object iCompute2Object = Class.forName(
+                                statsProp.propertyName() + "." + nxtHandlerName
+                        ).getConstructor(AbstractCachingPolicy.class).newInstance(
+                                nxtCachingPolicy
+                        );
+                        if (!(iCompute2Object instanceof IComputeGain)) {
+                            throw new StatisticException("No known stats handler:" + statsProp.name() + "." + nxtHandlerName);
+                        }
+                        IComputeGain hndlr = (IComputeGain) iCompute2Object;
+                        initHdlSet.add(hndlr);
+                        this.simStatististics.addTitle("MU-" + hndlr.getStatTitle());
+                        this.simStatististics.addTitle("SU-" + hndlr.getStatTitle());
+                        this.simStatististics.addTitle(hndlr.getStatTitle());
+                        LOGGER.log(
+                                Level.FINE, "Loaded new stats handler: {0}({1})",
+                                new String[]{
+                                    iCompute2Object.getClass().getCanonicalName(),
+                                    nxtCachingPolicy.toString()
+                                }
+                        );
+                    }
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    /**
+     * Used to initialize stats handlers of type ICompute3, for a given
+     * StatsProperty. Note that the passed StatsProperty's name must coincide
+     * with the package name of each statistics handler loaded.
+     *
+     * @param statsProp
+     * @param handlers2Init
+     * @throws IllegalAccessException
+     * @throws ClassNotFoundException
+     * @throws RuntimeException
+     * @throws InstantiationException
+     * @throws InvalidOrUnsupportedException
+     */
+    private Set<ICompute3> initCmpt3(StatsProperty statsProp) throws IllegalAccessException, ClassNotFoundException, RuntimeException, InstantiationException, InvalidOrUnsupportedException, NoSuchMethodException, StatisticException, IllegalArgumentException, InvocationTargetException {
+        Set<ICompute3> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerArgs : handleNames) {
+            switch (nxtHandlerArgs) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    /*
+                     * a name and two arguments are expected such as:
+                     * "DiffEval;caching.epc.Incremental;caching.epcIncrementalcpop.Cnc"
+                     */
+                    String statName;
+                    String meth1;
+                    String meth2;
+                    StringTokenizer tok = new StringTokenizer(nxtHandlerArgs, "|");
+                    try {
+                        statName = tok.nextToken();
+                        meth1 = tok.nextToken();
+                        meth2 = tok.nextToken();
+                    } catch (NoSuchElementException e) {
+                        throw new StatisticException("Error during parsing: " + nxtHandlerArgs + ". A method name and two arguments in the form of " + "\"statName|arg1|arg2\" must be applied");
+                    }
+                    Object newInstance = Class.forName(statsProp.propertyName() + "." + statName).getConstructor(String.class, String.class).newInstance(meth1, meth2);
+                    if (!(newInstance instanceof ICompute3)) {
+                        throw new StatisticException("No known stats handler:" + statsProp.name() + "." + nxtHandlerArgs);
+                    }
+                    ICompute3 hndlr = (ICompute3) newInstance;
+                    initHdlSet.add(hndlr);
+                    this.simStatististics.addTitle(hndlr.getStatTitle());
+                    LOGGER.log(Level.FINE,
+                            "Loaded new stats handler: {0}({1})",
+                            new String[]{
+                                newInstance.getClass().
+                                getCanonicalName(),
+                                hndlr.getStatTitle()}
+                    );
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<ICompute0> initFixedSCCmpt0(
+            StatsProperty statsProp,
+            Iterable<SmallCell> monitorSCs)
+            throws IllegalAccessException, ClassNotFoundException,
+            RuntimeException, InstantiationException,
+            InvalidOrUnsupportedException, NoSuchMethodException,
+            IllegalArgumentException, InvocationTargetException,
+            StatisticException {
+
+        Set<ICompute0> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    for (SmallCell nxtMonitorSC : monitorSCs) {
+                        for (AbstractCachingPolicy nxtCachePolicy : _sim.getCachingPolicies()) {
+                            Object newInstance = Class.forName(statsProp.propertyName() + "." + nxtHandlerName)
+                                    .getConstructor(AbstractCachingPolicy.class, SmallCell.class)
+                                    .newInstance(nxtCachePolicy, nxtMonitorSC);
+                            if (!(newInstance instanceof ICompute0)) {
+                                throw new StatisticException("No known stats handler:" + statsProp.name() + "." + nxtHandlerName);
+                            }
+                            ICompute0 hndlr = (ICompute0) newInstance;
+                            initHdlSet.add(hndlr);
+                            this.simStatististics.addTitle(hndlr.getStatTitle());
+                            LOGGER.log(Level.FINE,
+                                    "Loaded new stats handler: {0}(monitorSC={1})",
+                                    new String[]{newInstance.getClass().
+                                        getCanonicalName(),
+                                        String.valueOf(nxtMonitorSC)}
+                            );
+                        }
+                    }
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<ICompute0> initFixedSCCmpt0NoPolicies(
+            StatsProperty statsProp,
+            Iterable<SmallCell> monitorSCs)
+            throws IllegalAccessException, ClassNotFoundException,
+            RuntimeException, InstantiationException,
+            InvalidOrUnsupportedException, NoSuchMethodException,
+            IllegalArgumentException, InvocationTargetException,
+            StatisticException {
+
+        Set<ICompute0> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    for (SmallCell nxtMonitorSC : monitorSCs) {
+                        Object newInstance = Class.forName(statsProp.propertyName() + "." + nxtHandlerName)
+                                .getConstructor(SmallCell.class)
+                                .newInstance(nxtMonitorSC);
+                        if (!(newInstance instanceof ICompute0)) {
+                            throw new StatisticException("No known stats handler:" + statsProp.name() + "." + nxtHandlerName);
+                        }
+                        ICompute0 hndlr = (ICompute0) newInstance;
+                        initHdlSet.add(hndlr);
+                        this.simStatististics.addTitle(hndlr.getStatTitle());
+                        LOGGER.log(Level.FINE,
+                                "Loaded new stats handler: {0}(monitorSC={1})",
+                                new String[]{newInstance.getClass().
+                                    getCanonicalName(),
+                                    String.valueOf(nxtMonitorSC)}
+                        );
+
+                    }
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<ICompute4> initCmpt4Nopolicies(StatsProperty statsProp)
+            throws IllegalAccessException, ClassNotFoundException,
+            RuntimeException, InstantiationException, InvalidOrUnsupportedException,
+            NoSuchMethodException, IllegalArgumentException, InvocationTargetException,
+            StatisticException {
+
+        Set<ICompute4> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    String forName = statsProp.propertyName() + "." + nxtHandlerName;
+                    Object newInstance = Class.forName(forName).getConstructor().newInstance();
+                    if (!(newInstance instanceof ICompute4)) {
+                        throw new StatisticException("No known stats handler:" + forName);
+                    }
+                    ICompute4 hndlr = (ICompute4) newInstance;
+                    initHdlSet.add(hndlr);
+                    this.simStatististics.addTitle(hndlr.getStatTitle());
+                    LOGGER.log(Level.FINE,
+                            "Loaded new stats handler: {0}",
+                            newInstance.getClass().
+                            getCanonicalName()
+                    );
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<ComputeAllPoliciesImpl> initCmpt4(StatsProperty statsProp)
+            throws IllegalAccessException, ClassNotFoundException, RuntimeException,
+            InstantiationException, InvalidOrUnsupportedException, NoSuchMethodException,
+            IllegalArgumentException, InvocationTargetException, StatisticException {
+        Set<ComputeAllPoliciesImpl> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerName : handleNames) {
+            switch (nxtHandlerName) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    for (AbstractCachingPolicy nxtPolicy : _sim.getCachingPolicies()) {
+                        Object newInstance = Class.forName(statsProp.propertyName() + "." + nxtHandlerName).getConstructor(AbstractCachingPolicy.class).newInstance(nxtPolicy);
+                        if (!(newInstance instanceof ComputeAllPoliciesImpl)) {
+                            throw new StatisticException("No known stats handler:" + statsProp.name() + "." + nxtHandlerName);
+                        }
+                        ComputeAllPoliciesImpl hndlr = (ComputeAllPoliciesImpl) newInstance;
+                        initHdlSet.add(hndlr);
+                        this.simStatististics.addTitle(hndlr.getStatTitle());
+                        LOGGER.log(Level.FINE,
+                                "Loaded new stats handler: {0}",
+                                newInstance.getClass().
+                                getCanonicalName()
+                        );
+                    }
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<UnonymousCompute5> initCmpt5(StatsProperty statsProp) throws IllegalAccessException, ClassNotFoundException, RuntimeException, InstantiationException, InvalidOrUnsupportedException, NoSuchMethodException, IllegalArgumentException, InvocationTargetException, StatisticException {
+        Set<UnonymousCompute5> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerTitl : handleNames) {
+            switch (nxtHandlerTitl) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    for (AbstractCachingPolicy nxtCachePolicy : _sim.getCachingPolicies()) {
+                        UnonymousCompute5 hndlr = new UnonymousCompute5(nxtCachePolicy, nxtHandlerTitl);
+                        initHdlSet.add(hndlr);
+                        this.simStatististics.addTitle(hndlr.getStatTitle());
+                        LOGGER.log(Level.FINE,
+                                "Loaded new stats handler: {0}",
+                                hndlr.getStatTitle()
+                        );
+                    }
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    private Set<UnonymousCompute6> initCmpt6(StatsProperty statsProp) throws IllegalAccessException, ClassNotFoundException, RuntimeException, InstantiationException, InvalidOrUnsupportedException, NoSuchMethodException, IllegalArgumentException, InvocationTargetException, StatisticException {
+        Set<UnonymousCompute6> initHdlSet = new TreeSet<>();
+        List<String> handleNames = _scenarioSetup.listOfStringsProperty(statsProp);
+        for (String nxtHandlerTitl : handleNames) {
+            switch (nxtHandlerTitl) {
+                case Values.UNDEFINED:
+                case Values.NONE:
+                case Values.NULL:
+                    continue;
+                default:
+                    UnonymousCompute6 hndlr = new UnonymousCompute6(new UnonymousCompute6.WellKnownTitle(nxtHandlerTitl));
+                    initHdlSet.add(hndlr);
+                    this.simStatististics.addTitle(hndlr.getStatTitle());
+                    LOGGER.log(Level.FINE,
+                            "Loaded new stats handler: {0}",
+                            hndlr.getStatTitle()
+                    );
+            } //which
+        } //for
+        return initHdlSet;
+    }
+
+    protected boolean isStatsMinTimeExceeded() {
+        return _sim.simTime() > _minTime;
+    }
+
+    protected void updtFixedSC() throws StatisticException {
+
+        int recordingTime = statRecordingAvgPeriodTime();
+        if (!_handlers__fixed_sc__cmpt0.isEmpty()) {
+            for (ICompute0 handler : _handlers__fixed_sc__cmpt0) {
+                double val = handler.compute0();
+                if (val == -1) {
+                    continue;
+                }
+                simStatististics.addValuesForTime(recordingTime, handler.getStatTitle(), val);
+            }
+        } //</editor-fold>
+        if (!_handlers__fixed_sc__cmpt0__no_policy.isEmpty()) {
+            for (ICompute0 handler : _handlers__fixed_sc__cmpt0__no_policy) {
+                double val = handler.compute0();
+                if (val == -1) {
+                    continue;
+                }
+                simStatististics.addValuesForTime(recordingTime, handler.getStatTitle(), val);
+            }
+        } //</editor-fold>
+    }
+
+    /**
+     * must be called after moving and updating connectivity status
+     *
+     *
+     * @param mu
+     * @throws Exception
+     */
+    protected void updtIterativeMU(MobileUser mu) throws Exception {
+        if (!isStatsMinTimeExceeded() || iterative__mu__cmpt1.isEmpty()) {
+            return;
+        }
+        int recordingTime = statRecordingAvgPeriodTime();
+        Iterator<IComputePercent> stat_iter = iterative__mu__cmpt1.iterator();
+        while (stat_iter.hasNext()) {
+            IComputePercent nxtHandler = stat_iter.next();
+            simStatististics.addValuesForTime(recordingTime,
+                    nxtHandler.getStatTitle(),
+                    nxtHandler.computePercent(
+                            _sim, mu, mu.getCurrentlyConnectedSC()
+                    )
+            );
+        }
+    }
+
+    /**
+     * @param cu
+     * @throws exceptions.InvalidOrUnsupportedException
+     * @throws stats.StatisticException
+     * @Caution call before updating cache decisions
+     */
+    public void updtGainStats(CachingUser cu) throws InvalidOrUnsupportedException, StatisticException {
+        if (!isStatsMinTimeExceeded()) {
+            return;
+        }
+        int recordingTime = statRecordingAvgPeriodTime();
+
+        if (!gain_cmpt2.isEmpty()) {
+            Iterator<IComputeGain> statIterCmpt2 = gain_cmpt2.iterator();
+            while (statIterCmpt2.hasNext()) {
+                IComputeGain nxtStatHdlr = statIterCmpt2.next();
+                double value = nxtStatHdlr.compute2(cu);
+
+                // here for the refined category per user type
+                simStatististics.addValuesForTime(recordingTime,
+                        (cu instanceof MobileUser ? "MU-" : "SU-")
+                        + nxtStatHdlr.getStatTitle(),
+                        value);
+
+                // here for the general category of all user types
+                simStatististics.addValuesForTime(recordingTime,
+                        nxtStatHdlr.getStatTitle(),
+                        value);
+            }
+        }
+    }
+
+    /**
+     * Examples: BuffUsed, Hit%, MUsCurrConnected
+     *
+     * @throws StatisticException
+     */
+    protected void updtIterativeSCCmpt4() throws StatisticException {
+
+        int recordingTime = statRecordingAvgPeriodTime();
+        if (!iterative__sc__cmpt4.isEmpty()) {
+            Iterator<SmallCell> scIterator = _sim.getCellRegistry().cellsRegistered().iterator();
+            while (scIterator.hasNext()) {
+                SmallCell nxtSC = scIterator.next();
+                for (ComputeAllPoliciesImpl nxtStatHandler : iterative__sc__cmpt4) {
+                    ComputeAllPoliciesImpl handler = nxtStatHandler;
+                    double val = handler.compute4(nxtSC);
+                    if (val == -1) {
+                        continue;
+                    }
+                    simStatististics.addValuesForTime(recordingTime, handler.getStatTitle(), val);
+                }
+            }
+        } //</editor-fold>
+    }
+
+    /**
+     * Same as in updtIterativeSCCmpt4, only without respect to cache policies.
+     * Examples: NeighborsCount
+     *
+     * @throws StatisticException
+     */
+    protected void updtIterativeSCCmpt4NoCachePolicy() throws StatisticException {
+
+        int recordingTime = statRecordingAvgPeriodTime();
+        if (!iterative__sc__cmpt4_no_policies.isEmpty()) {
+            Iterator<SmallCell> scIterator = _sim.getCellRegistry().cellsRegistered().iterator();
+            while (scIterator.hasNext()) {
+                SmallCell nxtSC = scIterator.next();
+                for (ICompute4<SmallCell> nxtStatHandler : iterative__sc__cmpt4_no_policies) {
+                    ICompute4<SmallCell> handler = nxtStatHandler;
+                    double val = handler.compute4(nxtSC);
+                    if (val == -1) {
+                        continue;
+                    }
+                    simStatististics.addValuesForTime(recordingTime, handler.getStatTitle(), val);
+                }
+            }
+        } //</editor-fold>
+    }
+
+    /**
+     * Regards UnonymousCompute5 stats.
+     *
+     * @param d
+     * @param stat
+     * @throws Exception
+     */
+    protected void updtSCCmpt5(double d, UnonymousCompute5 stat) throws Exception {
+        if (!isStatsMinTimeExceeded()) {
+            return;
+        }
+        int recordingTime = statRecordingAvgPeriodTime();
+        if (iterative__sc__cmpt5.contains(stat)) {
+            simStatististics.addValuesForTime(recordingTime, stat.getStatTitle(), stat.compute5_6(d));
+        }
+    }
+
+    /**
+     * Regards UnonymousCompute6 stats.
+     *
+     * @param d
+     * @param stat
+     */
+    public void updtSCCmpt6(double d, UnonymousCompute6 stat) {
+        if (!isStatsMinTimeExceeded()) {
+            return;
+        }
+        int recordingTime = statRecordingAvgPeriodTime();
+        simStatististics.addValuesForTime(recordingTime, stat.getStatTitle(), stat.compute5_6(d));
+    }
+
+    protected Statistics getStats() {
+        return this.simStatististics;
+    }
+
+    /**
+     * Averaging statistics period that the current simulation time belongs to.
+     * Averaging periods (e.g per 20 time units) are used for
+     * compressing/aggregating result outputs per, e.g. 20 time units. As a side
+     * effect, the bigger the averaging period, the more smooth the resulting
+     * curves in the corresponding plots are.
+     *
+     * @return
+     */
+    protected int statRecordingAvgPeriodTime() {
+        // e.g. 20 * ((int) 18 / 20) =20 * ((int) 0.9) = 0
+        // e.g. 20 * (21 / 20) = 20 * ((int)1.05) = 20 * 1 = 20
+        return _aggregatesAvgPeriod * (_sim.simTime() / _aggregatesAvgPeriod);
+    }
+
+    /**
+     * Committing implies finalizing and thus compressing state in each record.
+     *
+     * This method must be called after recording all statistics for a give _sim
+     * simTime, to commit all statistics recorded for this _sim simTime.
+     *
+     * @return true iff stats are committed
+     *
+     * @Note Commit takes actually place if and only if (i) the current time
+     * denotes that previously recorded statistics were the last ones in a
+     * series of statistics of the averaging/smoothing period, and (ii) the
+     * minimum actual simulation time for keeping statistics is exceeded.
+     */
+    protected boolean tryCommitRound() {
+        int statRecordingAvgPeriodTime = statRecordingAvgPeriodTime();
+        /*@Caution must use this averaging period simTime instead of actual _sim clock simTime;
+             * otherwise it tries to finalize times that may have not been recorded*/
+        if (_aggregatesAvgPeriod == 1 || _sim.simTime() + 1 == statRecordingAvgPeriodTime) {
+            // finalize if this is the last recorded series of simStatististics
+            simStatististics.finalizeState(statRecordingAvgPeriodTime);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Spawns a thread that prints aggregated.
+     *
+     * @throws StatisticException
+     */
+    protected void prntAggregates() throws StatisticException {
+        if (!isStatsMinTimeExceeded()) {
+            return;
+        }
+        if (!_printAggregates) {
+            LOGGER.warning(
+                    "Output method for aggregated results invoked but"
+                    + " ignored. Verify stats printing "
+                    + "properties value.");
+            return;
+        }
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                String results;
+                try {
+                    results = simStatististics.resultsAggregated(_printMean, _printStddev, confInterval, _minTime, _clockMaxTime);
+                } catch (StatisticException | InvalidOrUnsupportedException ex) {
+                    LOGGER.log(Level.SEVERE, null, ex);
+                    throw new RuntimeException(ex);
+                }
+                statsPrinterAggregates.print(results);
+                statsPrinterAggregates.close();
+            }
+        };
+        new Thread(runnable).start();
+    }
+
+    /**
+     * Spawns a thread that prints results in incremental simTime sequence.
+     *
+     * @param flushClose close the stream after invocation.
+     * @throws StatisticException
+     */
+    protected void appendTransient(final boolean flushClose) throws StatisticException {
+        if (!isStatsMinTimeExceeded()) {
+            return;
+        }
+
+        if (!_printTransient) {
+            return;
+        }
+
+        try {
+            String results = simStatististics.
+                    resultsTransient(
+                            false, _printMean, _printStddev,
+                            confInterval
+                    );
+
+            //<editor-fold defaultstate="collapsed" desc="block if printing results">
+            synchronized (_statsPrinterTransient) {
+                while (_isPrintingLocked && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        _statsPrinterTransient.wait();
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+
+                _isPrintingLocked = false;
+                _statsPrinterTransient.notifyAll();
+            }
+            //</editor-fold>
+
+            _resultsTransientQ.add(results);
+
+            if (flushClose) {
+                checkFlushTransient(true);
+                _statsPrinterTransient.close();
+            }
+        } catch (StatisticException ex) {
+            LOGGER.log(Level.SEVERE, null, ex);
+            throw new CriticalFailureException(ex);
+        }
+
+    }
+
+    public void checkFlushTransient(boolean force) {
+        if (simTime() % _printTransientFlushPeriod == 0 || force) {
+            Runnable runPrint = new Runnable() {
+                public void run() {
+                    synchronized (_statsPrinterTransient) {
+                        while (_isPrintingLocked && !Thread.currentThread().isInterrupted()) {
+                            try {
+                                _statsPrinterTransient.wait();
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                        _isPrintingLocked = true;
+                        for (String nxtResults : _resultsTransientQ) {
+                            _statsPrinterTransient.print(nxtResults);
+                        }
+                        _resultsTransientQ.clear();
+                        _isPrintingLocked = false;
+                        _statsPrinterTransient.notifyAll();
+                    }
+
+                }
+            };
+
+            new Thread(runPrint).start();
+        }
+    }
+
+    public void incHandoverscount() {
+        _statHandoversCount++;
+    }
+
+    public void resetHandoverscount() {
+        _statHandoversCount = 0;
+    }
+
+    protected void statHandoversCount() {
+        updtSCCmpt6(_statHandoversCount,
+                new UnonymousCompute6(
+                        UnonymousCompute6.WellKnownTitle.EMPTY.
+                        concat(
+                                "#Handovers"
+                        )
+                )
+        );
+    }
+
+    @Override
+    public int simTime() {
+        return _sim.simTime();
+    }
+
+    @Override
+    public String simTimeStr() {
+        return "[" + simTime() + "]";
+    }
+
+    @Override
+    public int simID() {
+        return _sim.simID();
+    }
+
+    @Override
+    public SimulationBase getSim() {
+        return _sim;
+    }
+
+    @Override
+    public CellRegistry simCellRegistry() {
+        return _sim.simCellRegistry();
+    }
+
+}

@@ -1,0 +1,37 @@
+package caching.incremental;
+
+import caching.base.AbstractCachingPolicy;
+import sim.SimulationBase;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+
+/**
+ * Less naive than original Naive by ignoring request with minor probability
+ after parameter #SimulationBase.CACHING_POLICIES__NAIVE__TYPE02__THREASHOLD
+ *
+ * @author xvas
+ */
+public final class NaiveLess extends Naive {
+
+    private static final AbstractCachingPolicy singelton = new NaiveLess();
+
+    public static AbstractCachingPolicy instance() {
+        return singelton;
+    }
+
+    protected NaiveLess() {
+    }
+
+    @Override
+    public int cacheDecision(
+            SimulationBase sim, CachingUser mu, Iterable<Chunk> requestChunks, SmallCell hostSC, SmallCell targetSC) throws Throwable {
+
+        if (!hostSC.hasAsNeighbor(targetSC)) {
+            return 0;
+        }
+
+        return super.cacheDecision(sim, mu, requestChunks, hostSC, targetSC);
+    }
+
+}

@@ -1,0 +1,73 @@
+package caching.incremental;
+
+import caching.base.AbstractEPCPop;
+import caching.base.AbstractCachingPolicy;
+import caching.interfaces.incremental.IIncremental;
+import caching.Utils;
+import sim.Simulation;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+
+/**
+ * Efficient Proactive Caching and LeGaCy POPularity implementation with Cache
+ * decisions cancelation (CNC) supported and no support for any cache
+ * replacement policies.
+ *
+ * Note that unlike CncAvgProb, caching decisions use a weighted gain assessment
+ * based only on the transition probability of the requesting mobile user.
+ *
+ * @author xvas
+ */
+public final class EPC_with_Pop extends AbstractEPCPop implements IIncremental {
+
+    private static final EPC_with_Pop singleton = new EPC_with_Pop();
+
+    /**
+     * @return the singleton instance of this class according to its placement
+     * in the hierarchy of AbstractMethod class descendants.
+     */
+    public static AbstractCachingPolicy instance() {
+        return singleton;
+    }
+
+    EPC_with_Pop() {
+    }
+
+    @Override
+    public int cacheDecision(
+            Simulation sim, CachingUser mu, Iterable<Chunk> requestChunks, SmallCell hostSC, SmallCell sc) throws Throwable {
+
+        int totalSizeCached = 0;
+        Iterable<Chunk> chunks = mu.getRequestsInChunks();
+        for (Chunk nxtItem : chunks) {
+
+            if (sc.isCachedBy(mu, this, nxtItem)) {
+                continue;
+            }
+
+            double cachePrice = sc.cachePricePoll(false, nxtItem, this);
+            if (assess(mu, nxtItem, sc) / nxtItem.sizeInMBs() >= cachePrice) {
+
+                if (sc.isCached(this, nxtItem)) {
+                    sc.addCacher(mu, this, nxtItem);
+                    continue;
+                }
+
+                if (!Utils.isSpaceAvail(this, sc, nxtItem.sizeInBytes())) { //since no replacement policy supported
+                    continue;//cannot add this item
+                }
+
+                totalSizeCached += nxtItem.sizeInBytes();
+                sc.cacheItemAttempt(mu, this, nxtItem);
+            }
+        }
+        return totalSizeCached;
+    }
+
+    @Override
+    public double assess(CachingUser mu, Chunk item, SmallCell sc) throws Throwable {
+        return Utils.assessEPC_with_Pop(mu, item, sc, this);
+    }
+
+}

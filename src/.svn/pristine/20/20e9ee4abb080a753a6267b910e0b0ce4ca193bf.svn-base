@@ -1,0 +1,13 @@
+package caching.base;
+
+/**
+ * Naive Caching base.
+ *
+ * @author xvas
+ */
+public abstract class AbstractNaive extends AbstractCachingPolicy {
+
+    protected AbstractNaive() {
+    }
+
+}

@@ -1,0 +1,13 @@
+package stats.output.aggregating;
+
+/**
+ *
+ * @author xvas
+ */
+public class ResultFileMalformedException extends Exception{
+
+   ResultFileMalformedException(String string) {
+      super(string);
+   }
+   
+}

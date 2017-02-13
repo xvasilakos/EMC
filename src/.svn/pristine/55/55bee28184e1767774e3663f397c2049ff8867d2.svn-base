@@ -1,0 +1,260 @@
+package sim.space.cell.smallcell;
+
+import caching.base.AbstractCachingPolicy;
+import exceptions.InconsistencyException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import sim.run.SimulationBaseRunner;
+import sim.content.Chunk;
+import sim.space.users.CachingUser;
+import utilities.Couple;
+
+/**
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class TimeBufferImpl extends BufferBase implements ITimeBuffer {
+
+    /**
+     * Items per time of caching. Maps each cached item to the time it was
+     * cached.
+     */
+    private final SortedMap<Integer, Set<Chunk>> _itemsPerTOC;
+    /**
+     * Items per time of access. Maps each cached item to the most recent time
+     * it was accessed.
+     */
+    private final SortedMap<Integer, Set<Chunk>> _itemsPerTOA;
+    /**
+     * Maps (caching time, access times) couples to the item.
+     */
+    private final Map<Chunk, Couple<Integer, Integer>> _timesPerItem;
+
+    public TimeBufferImpl(SimulationBaseRunner sim, SmallCell cell, long capacity) throws InconsistencyException {
+        super(sim, cell, capacity);
+        this._timesPerItem = new HashMap();
+        this._itemsPerTOC = new TreeMap<>();
+        this._itemsPerTOA = new TreeMap<>();
+    }
+
+   
+
+    /**
+     * @return the time coupled with the items that were most recently accessed.
+     */
+    @Override
+    public Couple<Integer, Set<Chunk>> getMostRecentlyAccessed() {
+        if (_itemsPerTOA.isEmpty()) {
+            return null;
+        }
+        Set<Chunk> mostRecentlyAccessed = _itemsPerTOA.get(_itemsPerTOA.lastKey());
+        if (mostRecentlyAccessed == null) {
+            return null;
+        }
+        return new Couple<>(_itemsPerTOA.lastKey(), mostRecentlyAccessed);
+    }
+
+    /**
+     * @return the time coupled with the items that were least recently
+     * accessed.
+     */
+    @Override
+    public Couple<Integer, Set<Chunk>> getLeastRecentlyAccessed() {
+        if (_itemsPerTOA.isEmpty()) {
+            return null;
+        }
+        Set<Chunk> leastRecentlyAccessed = _itemsPerTOA.get(_itemsPerTOA.firstKey());
+        if (leastRecentlyAccessed == null) {
+            return null;
+        }
+        return new Couple<>(_itemsPerTOA.firstKey(), leastRecentlyAccessed);
+    }
+
+    /**
+     * @return the time coupled with the items that were most recently cached.
+     */
+    @Override
+    public Couple<Integer, Set<Chunk>> getMostRecentlyCached() {
+        if (_itemsPerTOC.isEmpty()) {
+            return null;
+        }
+        Set<Chunk> get = _itemsPerTOC.get(_itemsPerTOC.lastKey());
+        if (get == null) {
+            return null;
+        }
+        return new Couple<>(_itemsPerTOC.lastKey(), get);
+    }
+
+    /**
+     * @return the time coupled with the items that were least recently cached.
+     */
+    @Override
+    public Couple<Integer, Set<Chunk>> getLeastRecentlyCached() {
+        if (_itemsPerTOC.isEmpty()) {
+            return null;
+        }
+        Set<Chunk> get = _itemsPerTOC.get(_itemsPerTOC.firstKey());
+        if (get == null) {
+            return null;
+        }
+        return new Couple<>(_itemsPerTOC.firstKey(), get);
+    }
+
+    @Override
+    public boolean updtAccessTime(Chunk item) {
+
+        if (!isCached(item)) {
+            return false;
+        }
+
+        Couple<Integer, Integer> toc_toa = _timesPerItem.get(item);// time of caching + time of access
+
+        Set<Chunk> accessed = _itemsPerTOA.get(toc_toa.getSecond());
+        if (accessed == null) {
+            throw new InconsistencyException("No info for accessing any item including " + item.toString());
+        }
+        if (!accessed.remove(item)) {
+            throw new InconsistencyException("No info for accessing " + item.toString());
+        }
+        if (accessed.isEmpty()) {
+            _itemsPerTOA.remove(toc_toa.getSecond());
+        }
+
+        accessed = _itemsPerTOA.get(_cell.simTime());
+        if (accessed == null) {
+            accessed = new HashSet<>();
+            _itemsPerTOA.put(_cell.simTime(), accessed);
+        }
+        accessed.add(item);
+
+        /**
+         * Replace the couple with a new one were the second integer (the access
+         * time) is replaced by the current time.
+         */
+        _timesPerItem.put(item, new Couple(toc_toa.getFirst(), _cell.simTime()));
+
+        return true;
+    }
+
+    @Override
+    BufferBase.BufferAllocationStatus allocateAttempt(CachingUser mu, Chunk item, SmallCell sc) {
+        BufferAllocationStatus result = super.allocateAttempt(mu, item, sc);
+
+        if (result == BufferAllocationStatus.Success) {
+            Set<Chunk> cached = _itemsPerTOC.get(_cell.simTime());
+            if (cached == null) {
+                cached = new HashSet<>();
+                _itemsPerTOC.put(_cell.simTime(), cached);
+            }
+            cached.add(item);
+
+            Set<Chunk> accessed = _itemsPerTOA.get(_cell.simTime());
+            if (accessed == null) {
+                accessed = new HashSet<>();
+                _itemsPerTOA.put(_cell.simTime(), accessed);
+            }
+            accessed.add(item);
+
+            _timesPerItem.put(item, new Couple(_cell.simTime(), _cell.simTime()));
+        }
+
+        return result;
+    }
+
+    @Override
+    public int mostRecentAccess(Chunk item) {
+        if (!isCached(item)) {
+            return -1;
+        }
+
+        return _timesPerItem.get(item).getSecond();
+    }
+
+    @Override
+    public int cachedTime(Chunk item) {
+        if (!isCached(item)) {
+            return -1;
+        }
+
+        return _timesPerItem.get(item).getFirst();
+    }
+
+    @Override
+    public Set<CachingUser> deallocate(Chunk item, CachingUser mu,
+            AbstractCachingPolicy cachingMthd, SmallCell sc) 
+            throws UnsupportedOperationException, InconsistencyException {
+        Set<CachingUser> stillRequesting = super.deallocate(item, mu, cachingMthd, sc);
+
+        Couple<Integer, Integer> cacheTime_AccessTime = _timesPerItem.remove(item);
+
+        // remove from cached at that time.
+        Set<Chunk> cachedItems = _itemsPerTOC.get(cacheTime_AccessTime.getFirst());
+        cachedItems.remove(item);
+        if (cachedItems.isEmpty()) {
+            _itemsPerTOC.remove(cacheTime_AccessTime.getFirst());
+        }
+
+        // remove from accessed at that time.
+        Set<Chunk> accessItems = _itemsPerTOA.get(cacheTime_AccessTime.getSecond());
+        accessItems.remove(item);
+        if (accessItems.isEmpty()) {
+            _itemsPerTOA.remove(cacheTime_AccessTime.getSecond());
+        }
+
+        return stillRequesting;
+    }
+
+    @Override
+    public Set<Chunk> LRUAccessed() {
+        if (_itemsPerTOA.isEmpty()) {
+            return null;
+        }
+        return Collections.unmodifiableSet(_itemsPerTOA.get(_itemsPerTOA.firstKey()));
+    }
+
+    /**
+     * Returns the next in the LRU ordered by time record of items.
+     *
+     * If called with parameter next set to zero, then this method behaves
+     * exactly like LRUAccessed(), returning the first record of the least
+     * recently _used items. If parameter next is set to one, then it returns
+     * the next set of least recently _used item, and so forth.
+     *
+     * @param next
+     * @return
+     */
+    @Override
+    public Set<Chunk> LRUAccessed(int next) {
+        if (_itemsPerTOA.isEmpty()) {
+            return null;
+        }
+
+        Iterator<Integer> lruTimesIter = _itemsPerTOA.keySet().iterator();
+        while (lruTimesIter.hasNext() && next >= 0) {
+            if (next-- == 0) {
+                Integer nxtTime = lruTimesIter.next();
+                return Collections.unmodifiableSet(_itemsPerTOA.get(nxtTime));
+            }
+        }
+        return null;// all examined if reaches here, thus no more LRU items to return.
+    }
+
+    public Set<Chunk> LRUCached() {
+        if (_itemsPerTOC.isEmpty()) {
+            return null;
+        }
+        return Collections.unmodifiableSet(_itemsPerTOC.get(_itemsPerTOC.firstKey()));
+    }
+
+    @Override
+    public SortedMap<Integer, Set<Chunk>> getLRUMapping() {
+        return new TreeMap(_itemsPerTOA);
+    }
+
+}

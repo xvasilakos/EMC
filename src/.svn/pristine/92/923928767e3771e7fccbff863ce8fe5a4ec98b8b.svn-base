@@ -1,0 +1,56 @@
+package caching.rplc.mingain.no_price;
+
+import caching.Utils;
+import caching.base.AbstractCachingPolicy;
+import caching.base.IEMC;
+import exceptions.CriticalFailureException;
+import java.util.Comparator;
+import sim.space.cell.smallcell.SmallCell;
+import sim.content.Chunk;
+
+/**
+ * Efficient proactive caching with legacy popularity, using a least gain cache
+ * replacement policy defined in class AbstractGainRplc. Unlike MinGainAvgProb,
+ * this class implementation uses the sum of transition probabilities for
+ * assessing the weighted delay gain of a cache decision.
+ *
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public class EMC_LC_Full extends caching.base.no_price.AbstractGainRplc implements IEMC {
+
+    private static final AbstractCachingPolicy singelton = new EMC_LC_Full();
+
+    public static AbstractCachingPolicy instance() {
+        return singelton;
+    }
+
+    public EMC_LC_Full() {
+    }
+
+    @Override
+    public double assess(Chunk item, SmallCell sc) throws Throwable {
+        return Utils.assessEMC(item, sc, this);
+    }
+
+    @Override
+    protected double assessDiff(Chunk a, Chunk b, SmallCell sc) throws Throwable {
+        return assess(a, sc) / a.sizeInMBs() - assess(b, sc) / b.sizeInMBs();
+    }
+
+    @Override
+    public Comparator<Chunk> evictionPriorityComparator(final SmallCell sc) throws CriticalFailureException {
+        return new Comparator<Chunk>() {
+
+            @Override
+            public int compare(Chunk t1, Chunk t2) {
+                try {
+                    // t1 - t2  to use it as a min heap
+                    return (int) (10000 * assessDiff(t1, t2, sc));
+                } catch (Throwable ex) {
+                    throw new CriticalFailureException(ex);
+                }
+            }
+        };
+    }
+
+}

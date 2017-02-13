@@ -1,0 +1,122 @@
+package sim.time;
+
+import sim.ISimulationMember;
+import sim.Scenario;
+import sim.SimulationBase;
+import sim.space.cell.CellRegistry;
+
+/**
+ * @author Xenofon Vasilakos xvas@aueb.gr
+ */
+public abstract class AbstractClock implements ISimulationMember, Comparable<AbstractClock> {
+
+    /**
+     * this is the simTime since the class was loaded, i.e., from the beginning
+     * of the whole simulation batch
+     */
+    public final static long REAL_GLOBAL_TIME_BEGIN = System.currentTimeMillis();
+
+    protected int _simulationTime;
+    /**
+     * start simTime of this instance
+     */
+    protected final long realTimeStart;
+    protected SimulationBase simulation;
+    protected Scenario setup;
+
+    public AbstractClock(SimulationBase sim) {
+        this.realTimeStart = System.currentTimeMillis();
+        this._simulationTime = 0;
+        this.simulation = sim;
+        this.setup = sim.getScenario();
+    }
+
+    protected abstract void checkEnded(int time) throws NormalSimulationEndException;
+
+    /**
+     * @return the simTime after ticking
+     * @throws NormalSimulationEndException when the simulation has ended
+     * according to the SimulationEndChecker used.
+     */
+    public int tick() throws NormalSimulationEndException {
+        checkEnded(++_simulationTime);
+        return _simulationTime;
+    }
+
+    @Override
+    public final int simTime() {
+        return _simulationTime;
+    }
+
+    @Override
+    public final int simID() {
+        return getSim().getID();
+    }
+
+    @Override
+    public final SimulationBase getSim() {
+        return simulation;
+    }
+
+    @Override
+    public final CellRegistry simCellRegistry() {
+        return getSim().getCellRegistry();
+    }
+
+    public long realTimeElapsedL() {
+        return System.currentTimeMillis() - realTimeStart;
+    }
+
+    public String realTimeElapsedStr() {
+//      SimpleDateFormat sdf = new SimpleDateFormat("hh:mm:ss");
+//      return sdf.format(new Date(realTimeElapsedL()));
+        return realTime_str(realTimeElapsedL());
+    }
+
+    public static long realGlobalTimeElapsedL() {
+        return System.currentTimeMillis() - REAL_GLOBAL_TIME_BEGIN;
+    }
+
+    public static String realGlobalTimeElapsedStr() {
+//      SimpleDateFormat sdf = new SimpleDateFormat("hh:mm:ss");
+//      return sdf.format(new Date(realGlobalTimeElapsedL()));
+        return realTime_str(realGlobalTimeElapsedL());
+    }
+
+    public static String realTime_str(double elapsedMillis) {
+        return realTime_str((long) elapsedMillis);
+    }
+
+
+    public static String realTime_str(long elapsedMillis) {
+        if (elapsedMillis > 19 * 24 * 60 * 60 * 1000) {
+            return " > 19 days!";
+        }
+
+        long second = (elapsedMillis / 1000) % 60;
+        long minute = (elapsedMillis / (60 * 1000)) % 60;
+        long hour = (elapsedMillis / (60 * 60 * 1000)) % 24;
+        long days = (elapsedMillis / (24 * 60 * 60 * 1000)) % 30;
+        long months = (elapsedMillis / (30 * 24 * 60 * 60 * 1000));
+
+        StringBuilder timeFormatted = new StringBuilder(15);
+
+        if (days != 0) {
+            timeFormatted.append(String.format("%d days and ", days));
+        }
+        if (months != 0) {
+            timeFormatted.append(String.format("%.2 months and ", months));
+        }
+        timeFormatted.append(String.format("%02d:%02d:%02d", hour, minute, second));
+        return timeFormatted.toString();
+    }
+
+    @Override
+    public int compareTo(AbstractClock t) {
+        if (this.getClass().equals(t.getClass())) {
+            return this._simulationTime - t._simulationTime;
+        }
+        return this.getClass().getCanonicalName().compareTo(t.getClass().getCanonicalName());
+    }
+
+}

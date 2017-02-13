@@ -1,0 +1,356 @@
+package stats.output.aggregating;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.StringTokenizer;
+import java.util.TreeMap;
+import stats.StatisticException;
+import stats.Statistics;
+import static stats.Statistics.DEFAULT_ROUND_DECIMAL;
+import stats.StatsToValuesMapping;
+import stats.output.Constants;
+import static stats.output.Constants.IGNORE;
+import static stats.output.Constants.IGNORE_REPEAT;
+import static stats.output.Constants.MODE__AGGREGATES_STATS;
+import static stats.output.Constants.MODE__TRANSIENT_STATS;
+import static stats.output.Constants.REPEAT_DETAILS_BEGIN;
+import static stats.output.Constants.REPEAT_DETAILS_END;
+import static stats.output.Constants.SCENARIO_SETUP_BEGIN;
+import static stats.output.Constants.SCENARIO_SETUP_END;
+import static stats.output.Constants.TIME;
+import util.CommonFunctions;
+
+/**
+ *
+ * @author xvas
+ */
+public class ResultsFileParser {
+
+    /**
+     * Invoke after reading scenario setup parameters and scenario repeat
+     * details.
+     *
+     * @param bfin
+     * @return
+     * @throws IOException
+     */
+    private static List<String> loadStatisticsTitles(Set<String> statTitlesFilter, String csvTitles)
+            throws IOException, ResultFileMalformedException {
+
+        List<String> statTitles = new ArrayList();
+        StringTokenizer tokTitles = new StringTokenizer(csvTitles, ",");
+        while (tokTitles.hasMoreTokens()) {
+            String nxt_statTile = tokTitles.nextToken().trim();
+            if (statTitlesFilter.contains(nxt_statTile)) {
+                statTitles.add(nxt_statTile);
+            } else if (!nxt_statTile.equalsIgnoreCase(TIME)) {
+                statTitles.add(IGNORE);
+            }
+        }// inner while
+
+        return statTitles;
+    }
+
+    private static String readUntilEmptyOrEnd(BufferedReader bfin) throws IOException {
+        String nxtLine;
+        while ((nxtLine = bfin.readLine()) != null && nxtLine.trim().isEmpty()) ;
+        return nxtLine;
+    }
+
+    /**
+     * To be invoked for reading reading every csv line.
+     *
+     * @param csvLine
+     * @param statTitles
+     * @throws NumberFormatException
+     */
+    private static StatsToValuesMapping loadCSVLine4Transient(String csvLine, List<String> statTitles)
+            throws NumberFormatException {
+
+        csvLine = csvLine.substring(csvLine.indexOf(',') + 1);// in order to ignore time values when parsing based on titles of statistics
+
+        StatsToValuesMapping titls2multVals = new StatsToValuesMapping();
+        String[] tokValues = csvLine.split(",");
+        int statTitlesIdx = 0;
+        for (String nxtVal : tokValues) {
+
+            String nxtTitle = statTitles.get(statTitlesIdx++);
+
+            if (nxtTitle.equals(IGNORE)|| nxtVal.isEmpty()) {
+                continue;//inogre this value
+            }
+            titls2multVals.update(
+                    nxtTitle,
+                    DEFAULT_ROUND_DECIMAL,
+                    Double.valueOf(nxtVal));
+
+        }
+        return titls2multVals;
+    }
+
+    private static StatsToValuesMapping loadCSVLine4Aggregates(String csvLine, List<String> statTitles)
+            throws NumberFormatException {
+
+//        csvLine = csvLine.substring(csvLine.indexOf(',')+1);// in order to ignore time values when parsing based on titles of statistics
+        StatsToValuesMapping titls2multVals = new StatsToValuesMapping();
+        String[] tokValues = csvLine.split(",");
+        int statTitlesIdx = 0;
+        for (String nxtVal : tokValues) {
+
+            String nxtTitle = statTitles.get(statTitlesIdx++);
+
+            if (nxtTitle.equals(IGNORE)) {
+                continue;//inogre this value
+            }
+            titls2multVals.update(
+                    nxtTitle,
+                    DEFAULT_ROUND_DECIMAL,
+                    Double.valueOf(nxtVal));
+
+        }
+        return titls2multVals;
+    }
+
+    /**
+     *
+     * @param nxtLine
+     * @param bfin
+     * @return key: shortcut title for parameter; value: a ScenarioParamBean
+     * containing all the necessary information for a parameter in the scenario
+     * setup
+     * @throws IOException
+     * @throws NumberFormatException
+     */
+    private static SortedMap<String, ScenarioParamBean> parseScenarioSetup(BufferedReader bfin)
+            throws IOException, NumberFormatException, ResultFileMalformedException {
+
+        // stat shortcut title and corresponding details in ScenarioParamBean
+        SortedMap<String, ScenarioParamBean> setupBean = new TreeMap();
+
+        String nxtLine = readUntilEmptyOrEnd(bfin);
+
+        if (nxtLine == null) {
+            throw new ResultFileMalformedException("Reached end of file before reading scenario setup parameters");
+        } else if (// ensure reading SCENARIO_SETUP_BEGIN tag first
+                !nxtLine.equals(SCENARIO_SETUP_BEGIN)
+                && !nxtLine.equals("\"" + SCENARIO_SETUP_BEGIN)
+                && !nxtLine.equals(",\"" + SCENARIO_SETUP_BEGIN)
+                && !nxtLine.equals(",\"")) {
+            throw new ResultFileMalformedException(
+                    "The first non empty line of results file read is unexpected: " + nxtLine);
+        }
+
+        int orderCount = 0;
+        do {
+
+            if (nxtLine.startsWith(SCENARIO_SETUP_END) || nxtLine.startsWith(SCENARIO_SETUP_END + "\"")) {
+                System.err.println("xxx parseScenarioSetup2i break on: " + nxtLine);//xxx
+                break;
+            }
+
+            if (nxtLine.startsWith(IGNORE_REPEAT) || nxtLine.isEmpty() || nxtLine.equals("\"")) {
+                System.err.println("xxx parseScenarioSetup2i ignore on: " + nxtLine);//xxx
+                continue;
+            }
+
+            // else ..
+            ScenarioParamBean bean = new ScenarioParamBean();
+
+            /* aggregates to one recorded title
+          every simulation repeat with different seed */
+            StringTokenizer line = new StringTokenizer(nxtLine, ",");
+            String paramTitle_full = null;
+            String paramTitle_short = null;
+            String value_str = null;
+
+//<editor-fold defaultstate="collapsed" desc="parse parameter full title, short title, and value">
+            /*
+          * at this point we expect a full title, a short title, and a value for the parameter.
+          * The following code captures the above (3 tokens) as well as some exceptions to the rule of 3 tokens.
+             */
+            int tokens = line.countTokens(); // if 2 then full title for parameters is not expected.
+            try {
+                if (tokens < 4 && tokens > 1) {
+                    if (tokens == 3) {
+                        paramTitle_full = line.nextToken().trim();
+                    }
+                    if (tokens == 2) {
+                        paramTitle_full = "undefined";
+                    }
+                    paramTitle_short = line.nextToken().trim();
+                    value_str = line.nextToken().trim();
+                } else {
+                    paramTitle_full = paramTitle_short = "undefined";
+                    value_str = nxtLine.trim();
+                }
+            } catch (NoSuchElementException e) {
+                throw new ResultFileMalformedException("In line: " + nxtLine);
+            }
+//</editor-fold>
+
+            bean.setTitle_full(paramTitle_full);
+            bean.setTitle_short(paramTitle_short);
+            bean.setValue(value_str);
+
+            //<editor-fold defaultstate="collapsed" desc="bean.setLexicographicalOrder(orderCount_str)">
+            String orderCountStr = "";
+            if (++orderCount < 10) {
+                orderCountStr = "0" + orderCount; // trick for sorting by value in string format
+            }
+            if (orderCount < 100) {
+                orderCountStr = "0" + orderCountStr;
+            }
+            if (orderCount < 1000) {
+                orderCountStr = "0" + orderCountStr;
+            }
+            bean.setLexicographicalOrder(orderCountStr);
+            //</editor-fold>
+
+            setupBean.put(bean.getTitleShort(), bean);
+
+            System.err.println("xxx parseScenarioSetup2i added bean: " + bean.toString());//xxx
+
+        } while ((nxtLine = bfin.readLine()) != null);
+        return setupBean;
+    }
+
+    private static Statistics loadTransientStatistics(List<String> statTitles, BufferedReader bfin, int skipUntilTime)
+            throws IOException, ResultFileMalformedException, StatisticException {
+
+        Statistics theStats = new Statistics(null);
+
+        String nxtCSVLine;
+        if (null == (nxtCSVLine = readUntilEmptyOrEnd(bfin))) {
+            throw new ResultFileMalformedException("Reached end of file before reading any statistics values");
+        }
+
+        do {
+            int firstCommaPos = nxtCSVLine.indexOf(',');
+            int time = Integer.valueOf(nxtCSVLine.substring(0, firstCommaPos));
+            if (time < skipUntilTime) {
+                continue;
+            }
+//            StatsToValuesMapping titles_values = loadCSVLine(nxtLine.substring(1 + firstCommaPos), statTitles);
+            StatsToValuesMapping titles_values = loadCSVLine4Transient(nxtCSVLine, statTitles);
+            titles_values.finalizeState();
+            theStats.addValuesForTime(time, titles_values);
+        } while (null != (nxtCSVLine = bfin.readLine()));
+
+        return theStats;
+    }
+
+    private static Statistics loadTAggregatesStatistics(List<String> statTitles, BufferedReader bfin)
+            throws IOException, ResultFileMalformedException, StatisticException {
+
+        Statistics stats = new Statistics(null);
+
+        String nxtLine;
+        if (null == (nxtLine = readUntilEmptyOrEnd(bfin))) {
+            throw new ResultFileMalformedException("Reached end of file before reading any statistics values");
+        }
+
+        do {
+            StatsToValuesMapping titles2values = loadCSVLine4Aggregates(nxtLine, statTitles);
+            titles2values.finalizeState();
+            stats.addValuesForTime(Constants.AGGR_RESULTS_FILE__DEFAULT_TIME, titles2values);
+
+        } while (null != (nxtLine = bfin.readLine()));
+
+        return stats;
+    }
+
+    /**
+     * *
+     * Parses a results file and returns it as a ResultsFile instance. If
+     * anything went wrong, logs the reason and returns null.
+     *
+     * @param statTitlesFilter
+     * @param file
+     * @param statsModeType true if it is a transient results file; otherwise
+     * false if it is an aggregates results file.
+     * @param skipUntilTime if at transient results aggregation mode, up until
+     * which time to skip results.
+     * @return
+     * @throws java.io.FileNotFoundException
+     * @throws stats.output.aggregating.ResultFileMalformedException
+     * @throws stats.StatisticException
+     */
+    public static ResultsFile parse(Set<String> statTitlesFilter, File file,
+            String statsModeType, int skipUntilTime)
+            throws FileNotFoundException, IOException, NumberFormatException,
+            ResultFileMalformedException, StatisticException {
+
+        String filePath = null;
+        SortedMap<String, ScenarioParamBean> scenarioSetup = null;
+        Map<String, Double> repeatDetails = null;/*key: repeat variable short name
+       * Value: the value in Double format. Only double assumed..*/
+
+        Statistics _statsPerTime = null;
+
+        BufferedReader bfin = new BufferedReader(new FileReader(file));
+
+        filePath = file.getCanonicalPath();
+//        scenarioSetup = parseScenarioSetup(bfin);
+//        repeatDetails = loadRepeatDetails(bfin);
+
+        String nxtLine;
+        while ((nxtLine = bfin.readLine()) != null && !nxtLine.toUpperCase().startsWith(TIME.toUpperCase()));
+
+        List<String> statTitles = loadStatisticsTitles(statTitlesFilter, nxtLine);
+
+        switch (statsModeType) {
+            case MODE__TRANSIENT_STATS:
+                _statsPerTime = loadTransientStatistics(statTitles, bfin, skipUntilTime);
+                break;
+            case MODE__AGGREGATES_STATS:
+                _statsPerTime = loadTAggregatesStatistics(statTitles, bfin);
+                break;
+            default:
+                throw new UnsupportedOperationException(statsModeType);
+        }
+
+        bfin.close();
+        return new ResultsFile(filePath, scenarioSetup, repeatDetails, _statsPerTime);
+    }
+
+    public static Map<String, Double> loadRepeatDetails(BufferedReader bfin) throws IOException, ResultFileMalformedException {
+        Map<String, Double> repeatDetails = new HashMap<>(3);
+        boolean read__repeatBegin = false;
+        String nxtLine;
+        WHILE:
+        while ((nxtLine = bfin.readLine()) != null) {
+            System.err.println("xxx loadRepeatDetails1: " + nxtLine);//xxx
+
+            if (nxtLine.isEmpty() || nxtLine.equals("\"")) {
+                continue;
+            }
+
+            if (nxtLine.equals(REPEAT_DETAILS_BEGIN)
+                    || nxtLine.startsWith("\"" + REPEAT_DETAILS_BEGIN)) {
+                if (read__repeatBegin) {
+                    throw new ResultFileMalformedException(REPEAT_DETAILS_BEGIN + " is encountered more than once ");
+                }
+                read__repeatBegin = true;
+                continue;
+            } else if (nxtLine.startsWith(REPEAT_DETAILS_END)
+                    || nxtLine.startsWith(REPEAT_DETAILS_END + "\"")) {
+                break WHILE;
+            } else {
+                StringTokenizer tok = new StringTokenizer(nxtLine, ",");
+                tok.nextToken(); // ignore full name of repeat parameter e.g.  SCs_Per_Point_Ratio
+                repeatDetails.put(tok.nextToken(), Double.parseDouble(tok.nextToken()));
+            }
+        }
+        return repeatDetails;
+    }
+}

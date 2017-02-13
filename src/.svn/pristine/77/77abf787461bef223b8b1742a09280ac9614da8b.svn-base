@@ -1,0 +1,65 @@
+package caching.incremental;
+
+import caching.Utils;
+import caching.base.AbstractEPC;
+import caching.base.AbstractCachingPolicy;
+import caching.interfaces.incremental.IIncremental;
+import caching.interfaces.rplc.IGainNoRplc;
+import exceptions.InconsistencyException;
+import sim.SimulationBaseRunner;
+import sim.content.Chunk;
+import sim.space.cell.smallcell.BufferBase;
+import sim.space.cell.smallcell.SmallCell;
+import sim.space.users.CachingUser;
+
+/**
+ * Efficient Proactive Caching implementation with Cache decisions cancellation
+ * supported and no support for any cache replacement policies. Note that if any
+ * of the mobile requesters tries to cancel a request for an item, then the item
+ * is evicted, which differentiates this implementation from Incremental2.
+ *
+ * @author xvas
+ */
+public class EPC extends AbstractEPC implements IIncremental, IGainNoRplc {
+
+    private static EPC singleton = new EPC();
+
+    /**
+     * @return the singleton instance of this class according to its placement
+     * in the hierarchy of AbstractMethod class descendants.
+     */
+    public static AbstractCachingPolicy instance() {
+        return singleton;
+    }
+
+    protected EPC() {
+    }
+
+    @Override
+    public int cacheDecision(SimulationBaseRunner sim, CachingUser mu, Iterable<Chunk> requestChunks, SmallCell hostSC, SmallCell targetSC) throws Throwable {
+        int totalSizeCached = 0;
+        for (Chunk nxtItem : requestChunks) {
+
+            double cachePrice = targetSC.cachePrice(this);
+            double assessment = assess(mu, nxtItem, targetSC);
+
+//never do that:
+//            if (targetSC.isCached(this, nxtItem)) {
+//                targetSC.addCacher(mu, this, nxtItem);
+//                continue;
+//            }
+            if (targetSC.isCached(this, nxtItem) || !Utils.isSpaceAvail(this, targetSC, nxtItem.sizeInBytes())) {
+                continue; //since no eviction policy supported
+            }
+
+            if (assessment / nxtItem.sizeInMBs() >= cachePrice) {
+                totalSizeCached += nxtItem.sizeInBytes();
+                targetSC.cacheItem(mu, this, nxtItem);
+                targetSC.cachePriceUpdt(this);
+            }
+
+        }
+        return totalSizeCached;
+    }
+
+}

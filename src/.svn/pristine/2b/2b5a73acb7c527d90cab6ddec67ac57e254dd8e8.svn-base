@@ -1,0 +1,10 @@
+
+package stats.gainstats.gains;
+
+/**
+ *
+ * @author xvas
+ */
+public interface IBelognsToBroaderCategory {
+    public String titleBroaderCategory();
+}
