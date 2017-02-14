@@ -1,0 +1,6 @@
+Run 3 simulation runs in parallel (-p 3)
+Use properties defined in master ini (-pp ./files/sim/core/properties/master.ini)
+
+java -Xms2200m -Xmx12800m -jar ./dist/EMCSim.jar -p 3 -pp ./files/sim/core/properties/master.ini
+
+

@@ -1,0 +1,5 @@
+include ./iniUsed.ini 
+
+space.mu.dmd.trace.files=1/100MB/x227.csv;
+
+simulation.seed=1;11;111;1111;6;66;666;6666

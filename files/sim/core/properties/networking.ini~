@@ -1,0 +1,34 @@
+##############################################################################
+######################### Network data rates ################################# 
+##############################################################################
+
+
+
+#-------------------------------------------------------------------------------------------
+## README first ##
+ # Link data rates, as well as object chunk size numbers, are measured in megabits.  
+ # If multiple number values are used, e.g. in a 10x example value 10 is used instead of 1mbps, 
+ # then this can be used as a *hack* for simulating a coresponding multiple number of (real) time units in each 
+ # simulation step (simulation time unit). 
+ # This hack maikes simulations run faster, but comes at the cost of less precision in the evaluation results
+ # (sojourn and transition times become less precise, affecting cache decisions - see implementation/journal paper).
+ # If this hack is used, then MU speeds must be adjusted accordingly: in our former 10x example, use speed 30 
+ # rather than 3.   
+#--------------------------------------------------------------------------------------------
+
+ # In KB/s; 1Mbps=122KB/s or 125000 B/s
+ # A typical example of a scenario of macrocellular, smallcellular and backhaul triplets of rate: 
+ # 	<r_mc; r_sc; r_b> = <1.5;2;1 > in Mbps <=> ~ <187500;250000;125000> in B/s
+ # networking.rates.sc_backhaul=1#1.5Mbps, 80MB file in 447.4 tu (time units)
+ # networking.rates.sc_wireless=1.5#2Mbps, 80MB file in 335.5 tu (time units)
+ # networking.rates.mc_wireless=1#1Mbps, 80MB file in 671 tu (time units)
+
+## Chunk size. Measured in megabits to match rates.
+ # Set to a negative value to NOT chunk content
+ # Example: networking.chunk_size= 1 implies that a 80MB file is chuinked to 671 chunks
+
+#adapting hack: x10 rates
+networking.rates.sc_wireless=40 # instead of 4mbps 
+networking.rates.sc_backhaul=20 # instead of 2mbps
+networking.rates.mc_wireless=20 # instead of 2mbps
+networking.chunk_size=20 # use the lowest common multiple of the above values to match all data rates

@@ -1,0 +1,88 @@
+## Main simulation thread option: either "trace-based" or "mobility model-based" simulations
+ # Available types in package sim.run:
+ #	- sim.run.MobProbSimulation
+ #		Run simulation without mobility trace. Uses a defined mobility model
+ #	- sim.run.TraceMUSimulation
+ #		Run simulation using a mobility trace.
+space.mu.class=sim.run.TraceMUSimulation
+
+
+
+#============================ Trace-based simulations (sim.run.TraceMUSimulation) ============================
+
+## Used for any form of mobility trace that adapts the format of <defaultprops>/mobtraces/taxis/taxis.csv 
+ # Setting this parameter to NONE implies using Mobile Users (MUs) with a mobility model defined after parameter space.mu.transition_probabilities.matrix.
+ # Also, if the NONE value is used, then space.mu.class must be set to "MobProbSimulation"
+space.mu.trace=<defaultprops>/taxis.csv
+space.mu.trace.meta=<defaultprops>/taxis_meta.csv
+
+
+
+
+
+
+#============================ Mobility model-based simulations (sim.run.MobProbSimulation) ============================ 
+
+
+## Define the type of handover probabilities adapted.
+ #	Options:
+ #	- location	
+ #		Probabilities depend only on MUs Small Cell (SC) locations before and after 
+ #		they perform a handover to the next SC. 
+ #		Therefore, probabilities are maintained per pair of small cells.
+ #
+ #	- location+group
+ #		Same as location, only handover probabilities are maintained per MU group rather than individual MUs.
+space.sc.mobility_model=location
+
+
+## Probabitlity matrix of mobile transition probabilities. 
+ #	Use values in the form of: "$x1, NW, N, NW, W, Center/immobile, E, SW, S, SW, $x2, NW, N, NW, W, Center/immobile, E, SW, S, SW, $... | ..."
+ # 	- $x
+ #		A double number "x<=1" that denotes the percentage of mobiles that follow the probability model "NW, N, NW, W, Center/immobile, E, SW, S, SW".
+ # 	- Probability model x1, NW, N, NW, W, Center/immobile, E, SW, S, SW - 9 probabilities (implies sum equal to 1.0)
+ #		
+ # The above implies at least one set of ten, comma-separated values.
+ #
+ #	- Use "|" to signify next group of MUs
+ #		Optionally use "|" to separate different probability matrixes, each for a different group of mobile users.
+ #
+ #	Note that if there are multiple groups of MUs defined, but only one probability matrix defined, 
+ #	then the matrix is used for all groups.
+ #
+ # Some examples are provided below: 
+ #	- 100% north: $1.0, 0, 1, 0,  0, 0, 0,   0, 0, 0 
+ #	- 80% north: $0.8, 0, 1, 0,  0, 0, 0,   0, 0, 1,	$0.075,   0, 0, 0,  0, 0, 0, 0, 1, 0,	$0.075, 0, 0, 0,  1, 0, 0,   0, 0, 0,	$0.05,   0, 0, 0,  0, 0, 1,   0, 0, 0,     
+ #	- "raw" 80%-north: $1.0, 0, 0.8, 0,  0.1, 0, 0.1,   0, 0, 0
+ #	- uniform mobility: $0.25,0, 1, 0,  0, 0, 0,   0, 0, 0,	$0.25, 0, 0, 0,  0, 0, 0, 0, 1, 0,	$0.25,   0, 0, 0,  0, 0, 1,   0, 0, 0,	$0.25, 0, 0, 0,  1, 0, 0,   0, 0, 0
+ #	- "raw" uniform mobility: $1.0,   0.125, 0.125, 0.125,  0.125, 0.0, 0.125,   0.125, 0.125, 0.125
+space.mu.transition_probabilities.matrix=$0.075,   0, 0, 0,  0, 0, 1,   0, 0, 0,    $0.075, 0, 0, 0,  1, 0, 0,   0, 0, 0,   $0.05,   0, 1, 0,  0, 0, 0,   0, 0, 0,    $0.8, 0, 0, 0,  0, 0, 0,   0, 0, 1
+	
+
+
+
+#						space.mu.transition_decisions
+#
+#	Defines how transition probabilities are applied
+space.mu.transition_decisions=per_mu
+#	# per_mu:
+#		Each mobile user moves to any of the directions according to a random choice based on 
+#		the corresponding transition probabilties per direction.
+#
+# 	# per_mu+centrify:
+#		Mobiles move always towards the same direction until they perform a handover. 
+#		The direction is defined after the maximum probability value in the probability matrix 
+#		space.mu.transition_probabilities.matrix. Therefore, there MUST be a max probability in 
+#		the matrix (avoid pure uniform schemes).
+#		When a handover is performed, the mobiles are set to the center point of their currently
+#		new hosting small cell. 
+#
+# 	# per_mu+centrify+change_direction:
+#		Same as per_mu+centrify, plus the mobiles' direction changes (before moving) to a new one   
+#		based on the probabilities in the matrix. Once the direction is chosen, the matrix is rotated 
+#		clockwise to the same direction.  
+#
+#	# per_cell_neighbourhood:
+#		Mobiles move to next small cell without using their own transition probabilities. 
+#		Special cell transition probabilities based on the origins small cell are used instead.
+

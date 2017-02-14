@@ -1,0 +1,8 @@
+java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/4.ini 2> /home/xvas/Dropbox/2014-2015-EPC+POP/trunk/files/unsync/dump/dump-4.txt
+
+
+#java -Xms4200m -Xms24030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/0.ini; java -Xms4200m -Xms24030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/1.ini; java -Xms4200m -Xms24030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/2.ini; java -Xms4200m -Xms24030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/3.ini; 
+
+java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 3 -pp walkers_ini/4.ini;
+
+java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 2 -pp walkers_ini/0.ini; java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 2 -pp walkers_ini/1.ini; java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 2 -pp walkers_ini/2.ini; java -Xms4200m -Xms14030m -jar ./dist/EMPCSim.jar -p 2 -pp walkers_ini/3.ini; 

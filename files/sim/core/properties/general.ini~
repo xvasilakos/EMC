@@ -1,0 +1,49 @@
+############################# General Properties ###############################
+
+
+# =============================== Clock/ Simulation time properties ==============================
+
+## Define the type of clock used for the simulation. The available types are:
+ #	- sim.time.FiniteTimeClock 
+ # 		This type of clock terminates the simulation after a finite time (see simulation.clock.max_time)
+ #		has elapsed.
+ #	- sim.time.SimpleClock
+ # 		A clock that simply ticks without terminating the simulation. 
+simulation.clock.type=sim.time.FiniteTimeClock
+
+
+## Clock max time set for decedants of sim.time.FiniteTimeClock
+ #	Used only by clock classes that extend sim.time.FiniteTimeClock
+ #	@Caution: Consider parameter stats.min_time parameter before asigning a value.
+simulation.clock.max_time=9999
+
+
+## Maximum number of requests threshold. 
+ # Exceeding this thresholds causes the simulation run to terminate.
+simulation.clock.max_req_num=100000
+
+
+## Used for simulation progress user updates.  
+ # Update information are printed every "t" simulation time units, where t is defined as
+ # the following product: simulation.clock.max_time x simulation.progress_update
+simulation.progress_update=0.005
+
+
+## Garbage Collection Period (in simulation time units). 
+ # Try to manipulated the garbage collector of the JVM.
+ # Setting this parameter to 0 implies invocation after completing every simulation. 
+ # Negative values leave JVM to decide about garbage collection on its own.
+simulation.clock.gc_period=100;
+
+
+## Define how numbers are printed.
+simulation.DecimalFormat=0.#E0
+
+ 
+
+
+
+
+
+
+

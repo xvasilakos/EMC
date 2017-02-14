@@ -1,0 +1,8 @@
+Jul 07, 2014 9:36:43 PM epc.femto.sim.space.mu.MUGroupsRegistry <init>
+WARNING: MUs in group 1 have a zero maximum velocity, which implies that they do not move during the simulation.
+Jul 07, 2014 9:37:08 PM epc.femto.sim.Simulation$StatsHandling outputStats_transient
+WARNING: output method for transient results invoked but ignored. Verify stats printing properties value.
+Jul 07, 2014 9:37:08 PM epc.femto.sim.space.mu.MUGroupsRegistry <init>
+WARNING: MUs in group 1 have a zero maximum velocity, which implies that they do not move during the simulation.
+Jul 07, 2014 9:37:31 PM epc.femto.sim.Simulation$StatsHandling outputStats_transient
+WARNING: output method for transient results invoked but ignored. Verify stats printing properties value.

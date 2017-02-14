@@ -1,0 +1,87 @@
+########################################################	
+################# Caching strategies ###################
+
+## Caching benchmarks 
+	# caching.MaxPop
+	# caching.incremental.Naive
+	# caching.incremental.NaiveLess ## NaiveLess is a bit more clever than pure Naive.
+	# caching.incremental.Oracle
+
+##==============================================================
+## Proactive caching-based. 
+	## No aggregated probabilities or weighted popularity 
+	 # caching.incremental.EPC
+	 # caching.incremental.EPC_with_Pop
+	 # caching.incremental.PopOnly
+
+##==============================================================
+	## EMC and EMPC 
+	 # - *without* replacements
+	 # caching.incremental.EMC
+	 # caching.incremental.EMPC
+	 # caching.incremental.EMC_with_HandOffTime
+
+	## EMC and EMPC
+	 # - *with* replacements 
+	 # - with *pricing*
+	 #	 
+	 # caching.rplc.mingain.EMC_LC_Full
+	 # caching.rplc.mingain.EMPC_LC_Full
+	 # caching.rplc.mingain.EPCPopTrackPC
+	
+	## EMC and EMPC *with* replacements, *without* pricing.
+	 # caching.rplc.mingain.no_price.EMC_LC_Full
+	 # caching.rplc.mingain.no_price.EMPC_LC_Full
+	
+	## EMC and EMPC 
+	 # - *with* replacements, 
+	 # - *without* pricing.
+	 # - with *tuned* time of eviction (using the golden ratio algorithm)
+	 #	
+	 # caching.rplc.mingain.tuned.EMPC_LC_Tuned_a
+	 # caching.rplc.mingain.tuned.EMPC_LC_Tuned_b
+	 # caching.rplc.mingain.tuned.EMPC_LC_Tuned_c1
+	 # caching.rplc.mingain.tuned.EMPC_LC_Tuned_c2
+	
+
+#===============================	
+#
+#
+# List of caching strategies used. 
+# Different caches are simulated in parallel, one for each strategy in the list 
+caching.policies = caching.rplc.mingain.no_price.EMC_LC_Full, caching.incremental.EMC, caching.incremental.Naive, caching.MaxPop
+#
+#
+# Maximum cache capacity perecentage that a topmost popular
+# object can occupy. Objects bigger than this threshold are skipped from the cache (as a whole).
+# Setting this parameter to "0" applies no threshold.
+caching.policies.MaxPop_cutter=0
+#
+#
+# Setting this to "true" causes to preload each simulated cache with the topmost popular objects
+# from the used trace of requests. Otherwise, i.e. by setting this to false, preloading 
+# is used only for the MaxPop cache.
+caching.preload_caches_all_policies=false
+
+
+
+#===========================================================================================================================
+#=============================== Golden ratio search parameter used for raplacements tunning ===============================
+
+
+## caching.rplc.mingain.sum.heuristic.time.dynamic.*
+ # The simulation time that needs to elapse in order to run the golden ration search algorithm 
+ # and update a, b, c1 and c2. 
+caching.rplc.mingain.sum.heuristic.time.dynamic.readjustment_period=25
+caching.rplc.mingain.sum.heuristic.time.dynamic.max_bound=50
+ #
+ # The performance difference between a and b which indicates that the golden ratio
+ # search algorithm concluded.
+caching.rplc.mingain.sum.heuristic.time.dynamic.stopE=0.25
+
+
+
+## caching.naive.Type02.threshold
+ # A threashold for type 02 naive caching Policy. Prevents caching if the history of
+ # handovers between two cells is less than this theshold.
+caching.naive.Type02.threshold = 0.1;

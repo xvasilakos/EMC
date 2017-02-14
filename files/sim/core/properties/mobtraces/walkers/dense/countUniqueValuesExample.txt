@@ -1,0 +1,4 @@
+prosoxh argei isws..
+
+=SUMPRODUCT(1/COUNTIF(B3:b11000,B3:b11000))
+
