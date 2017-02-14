@@ -1,3 +1,11 @@
+Produced with the GlobeTraff trafic genrator tool: 
+  "GlobeTraff: a traffic workload generator for the performance evaluation of future Internet architectures"
+  by K. Katsaros, G. Xylomenos and G. C. Polyzos
+  5th International Conference on New Technologies, Mobility and Security (NTMS), pp. 1-5, 
+  IEEE, 2012
+
+
+
 Records in trace files follow the structure:
 
 	docs.x.all:
